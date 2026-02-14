@@ -43,3 +43,20 @@ Outputs (Step 1 placeholders):
 
 - `--exclude <glob>` (repeatable) to ignore paths relative to `--source`.
 - `--include-tests` to include `src/test` and other common test folders.
+
+## Download & run
+
+### From GitHub Actions artifacts (every push/PR)
+1. Open the latest **Build** workflow run.
+2. Download the `java-to-xmi-jar` artifact.
+3. Run:
+   ```bash
+   java -jar java-to-xmi-*.jar --help
+   ```
+
+### From GitHub Releases (tags)
+If you create a tag like `v0.1.0`, the **Release** workflow will publish a GitHub Release containing the runnable jar.
+
+```bash
+java -jar java-to-xmi-*.jar --source ./my-project --output ./out/model.xmi --report ./out/report.md
+```
