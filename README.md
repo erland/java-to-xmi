@@ -42,4 +42,4 @@ Outputs (Step 1 placeholders):
 ## Step 2: Source scanning options
 
 - `--exclude <glob>` (repeatable) to ignore paths relative to `--source`.
-- `--include-tests` to include `src/test`, `test`, `tests` (default: excluded).
+- `--include-tests` to include `src/test` and other common test folders.

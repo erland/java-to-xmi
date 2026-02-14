@@ -1,6 +1,10 @@
 package se.erland.javatoxmi;
 
 import se.erland.javatoxmi.io.SourceScanner;
+import se.erland.javatoxmi.extract.JavaExtractor;
+import se.erland.javatoxmi.model.JModel;
+import se.erland.javatoxmi.model.JType;
+import se.erland.javatoxmi.model.UnresolvedTypeRef;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -10,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Step 1+2 scaffold: CLI entrypoint + basic argument validation + deterministic source scanning.
+ * Step 1–3 scaffold: CLI entrypoint + basic argument validation + deterministic source scanning.
  *
  * Later steps will add:
  * - Java AST extraction
@@ -78,6 +82,10 @@ public final class Main {
         }
 
         // Still scaffold: Produce placeholder outputs so the CLI feels tangible.
+
+        // Step 3: parse + extract a compact Java semantic model (baseline type resolution).
+        final JModel jModel = new JavaExtractor().extract(sourcePath, javaFiles);
+
         final Path xmiOut = outputPath.resolve("model.xmi");
         final Path reportOut = outputPath.resolve("report.md");
         try {
@@ -88,7 +96,7 @@ public final class Main {
             // Always write report (it's quick and useful even in scaffold mode)
             StringBuilder report = new StringBuilder();
             report.append("# java-to-xmi report\n\n");
-            report.append("This is a scaffold run (Steps 1-2).\n\n");
+            report.append("This is a scaffold run (Steps 1–3).\n\n");
             report.append("- Source: `").append(sourcePath).append("`\n");
             report.append("- Output: `").append(outputPath).append("`\n");
             report.append("- Java files discovered: **").append(javaFiles.size()).append("**\n");
@@ -99,8 +107,39 @@ public final class Main {
             for (Path p : javaFiles) {
                 report.append("- `").append(sourcePath.relativize(p).toString().replace("\\", "/")).append("`\n");
             }
+
+            report.append("\n## Extracted types\n");
+            report.append("Types extracted: **").append(jModel.types.size()).append("**\n\n");
+            for (JType t : jModel.types) {
+                report.append("- `").append(t.qualifiedName).append("` (").append(t.kind).append(")");
+                if (t.extendsType != null && !t.extendsType.isBlank()) {
+                    report.append(" extends `").append(t.extendsType).append("`");
+                }
+                if (!t.implementsTypes.isEmpty()) {
+                    report.append(" implements ");
+                    report.append(t.implementsTypes.stream().map(x -> "`" + x + "`").collect(java.util.stream.Collectors.joining(", ")));
+                }
+                report.append("\n");
+            }
+
+            report.append("\n## Parse errors\n");
+            if (jModel.parseErrors.isEmpty()) {
+                report.append("_(none)_\n");
+            } else {
+                for (String pe : jModel.parseErrors) report.append("- ").append(pe).append("\n");
+            }
+
+            report.append("\n## Unresolved type references\n");
+            if (jModel.unresolvedTypes.isEmpty()) {
+                report.append("_(none)_\n");
+            } else {
+                // stable ordering
+                java.util.List<UnresolvedTypeRef> ur = new java.util.ArrayList<>(jModel.unresolvedTypes);
+                ur.sort(java.util.Comparator.comparing(u -> u.referencedType + "|" + u.fromQualifiedType + "|" + u.where));
+                for (UnresolvedTypeRef u : ur) report.append("- ").append(u.toString()).append("\n");
+            }
             report.append("\n");
-            report.append("Next steps will parse these sources, build a UML model, and export deterministic XMI.\n");
+            report.append("Next steps will build a UML model and export deterministic XMI.\n");
 
             Files.writeString(reportOut, report.toString());
         } catch (IOException e) {
@@ -110,7 +149,7 @@ public final class Main {
             return;
         }
 
-        System.out.println("java-to-xmi (scaffold)\n" +
+        System.out.println("java-to-xmi (scaffold, Steps 1–3)\n" +
                 "- Source: " + sourcePath + "\n" +
                 "- Output: " + outputPath + "\n" +
                 "- Java files: " + javaFiles.size() + "\n" +

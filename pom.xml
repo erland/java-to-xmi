@@ -14,7 +14,13 @@
   </properties>
 
   <dependencies>
-    <!-- Step 1 keeps dependencies minimal. Add Spoon/JavaParser + EMF/UML2 in later steps. -->
+    <!-- Java parsing (Step 3) -->
+    <dependency>
+      <groupId>com.github.javaparser</groupId>
+      <artifactId>javaparser-core</artifactId>
+      <version>3.26.2</version>
+    </dependency>
+
 
     <!-- Test deps (used in later steps) -->
     <dependency>
