@@ -5,6 +5,10 @@ import se.erland.javatoxmi.extract.JavaExtractor;
 import se.erland.javatoxmi.model.JModel;
 import se.erland.javatoxmi.model.JType;
 import se.erland.javatoxmi.model.UnresolvedTypeRef;
+import se.erland.javatoxmi.uml.UmlBuilder;
+import se.erland.javatoxmi.uml.UmlBuildStats;
+
+import org.eclipse.uml2.uml.Model;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -81,10 +85,13 @@ public final class Main {
             return;
         }
 
-        // Still scaffold: Produce placeholder outputs so the CLI feels tangible.
-
         // Step 3: parse + extract a compact Java semantic model (baseline type resolution).
         final JModel jModel = new JavaExtractor().extract(sourcePath, javaFiles);
+
+        // Step 4: Build a UML object graph in-memory (serialization in Step 5).
+        final UmlBuilder.Result umlResult = new UmlBuilder().build(jModel, sourcePath.getFileName().toString());
+        final Model umlModel = umlResult.umlModel;
+        final UmlBuildStats umlStats = umlResult.stats;
 
         final Path xmiOut = outputPath.resolve("model.xmi");
         final Path reportOut = outputPath.resolve("report.md");
@@ -139,7 +146,20 @@ public final class Main {
                 for (UnresolvedTypeRef u : ur) report.append("- ").append(u.toString()).append("\n");
             }
             report.append("\n");
-            report.append("Next steps will build a UML model and export deterministic XMI.\n");
+
+            report.append("## UML model build (Step 4)\n");
+            report.append("UML model name: `").append(umlModel.getName()).append("`\n\n");
+            report.append("- Packages created: **").append(umlStats.packagesCreated).append("**\n");
+            report.append("- Classifiers created: **").append(umlStats.classifiersCreated).append("**\n");
+            report.append("- Attributes created: **").append(umlStats.attributesCreated).append("**\n");
+            report.append("- Operations created: **").append(umlStats.operationsCreated).append("**\n");
+            report.append("- Parameters created: **").append(umlStats.parametersCreated).append("**\n");
+            report.append("- Generalizations created: **").append(umlStats.generalizationsCreated).append("**\n");
+            report.append("- Interface realizations created: **").append(umlStats.interfaceRealizationsCreated).append("**\n");
+            report.append("- Associations created: **").append(umlStats.associationsCreated).append("**\n");
+            report.append("- Dependencies created: **").append(umlStats.dependenciesCreated).append("**\n\n");
+
+            report.append("Next step will export deterministic UML XMI.\n");
 
             Files.writeString(reportOut, report.toString());
         } catch (IOException e) {
