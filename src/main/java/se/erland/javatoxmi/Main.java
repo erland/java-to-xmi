@@ -1,15 +1,18 @@
 package se.erland.javatoxmi;
 
+import se.erland.javatoxmi.io.SourceScanner;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Step 1 scaffold: CLI entrypoint + basic argument validation.
+ * Step 1+2 scaffold: CLI entrypoint + basic argument validation + deterministic source scanning.
  *
  * Later steps will add:
- * - source scanning
  * - Java AST extraction
  * - UML model building
  * - XMI serialization
@@ -63,23 +66,45 @@ public final class Main {
             return;
         }
 
-        // Step 1: only scaffold. Produce placeholder outputs so the CLI feels tangible.
+        // Step 2: deterministic source scanning (still no AST/UML yet).
+        final List<Path> javaFiles;
+        try {
+            javaFiles = SourceScanner.scan(sourcePath, parsed.excludes, parsed.includeTests);
+        } catch (IOException e) {
+            System.err.println("Error: could not scan source directory: " + sourcePath);
+            System.err.println(e.getMessage());
+            System.exit(2);
+            return;
+        }
+
+        // Still scaffold: Produce placeholder outputs so the CLI feels tangible.
         final Path xmiOut = outputPath.resolve("model.xmi");
         final Path reportOut = outputPath.resolve("report.md");
         try {
             if (!Files.exists(xmiOut)) {
                 Files.writeString(xmiOut, "<!-- Placeholder. Step 5 will generate real UML XMI here. -->\n");
             }
-            if (!Files.exists(reportOut)) {
-                Files.writeString(reportOut,
-                        "# java-to-xmi report\n\n" +
-                        "This is a scaffold run (Step 1).\n\n" +
-                        "- Source: `" + sourcePath + "`\n" +
-                        "- Output: `" + outputPath + "`\n\n" +
-                        "Next steps will scan Java files, build a UML model, and export deterministic XMI.\n");
+
+            // Always write report (it's quick and useful even in scaffold mode)
+            StringBuilder report = new StringBuilder();
+            report.append("# java-to-xmi report\n\n");
+            report.append("This is a scaffold run (Steps 1-2).\n\n");
+            report.append("- Source: `").append(sourcePath).append("`\n");
+            report.append("- Output: `").append(outputPath).append("`\n");
+            report.append("- Java files discovered: **").append(javaFiles.size()).append("**\n");
+            report.append("- Include tests: **").append(parsed.includeTests).append("**\n");
+            report.append("- Excludes: ").append(parsed.excludes.isEmpty() ? "_(none)_" : "`" + String.join("`, `", parsed.excludes) + "`").append("\n\n");
+
+            report.append("## Discovered files\n");
+            for (Path p : javaFiles) {
+                report.append("- `").append(sourcePath.relativize(p).toString().replace("\\", "/")).append("`\n");
             }
+            report.append("\n");
+            report.append("Next steps will parse these sources, build a UML model, and export deterministic XMI.\n");
+
+            Files.writeString(reportOut, report.toString());
         } catch (IOException e) {
-            System.err.println("Error: could not write placeholder outputs to: " + outputPath);
+            System.err.println("Error: could not write outputs to: " + outputPath);
             System.err.println(e.getMessage());
             System.exit(2);
             return;
@@ -88,17 +113,22 @@ public final class Main {
         System.out.println("java-to-xmi (scaffold)\n" +
                 "- Source: " + sourcePath + "\n" +
                 "- Output: " + outputPath + "\n" +
+                "- Java files: " + javaFiles.size() + "\n" +
                 "\n" +
-                "Wrote placeholder files:\n" +
+                "Wrote files:\n" +
                 "- " + xmiOut + "\n" +
                 "- " + reportOut);
     }
 
-    /** Minimal CLI argument parsing without external dependencies (Step 1). */
+    /** Minimal CLI argument parsing without external dependencies (Step 1/2). */
     static final class CliArgs {
         boolean help = false;
         String source;
         String output = "./output";
+
+        // Step 2 flags
+        boolean includeTests = false;
+        final List<String> excludes = new ArrayList<>();
 
         static CliArgs parse(String[] args) {
             CliArgs out = new CliArgs();
@@ -106,6 +136,12 @@ public final class Main {
             for (int i = 0; i < args.length; i++) {
                 String a = args[i];
                 if (a == null) continue;
+
+                // support --exclude=glob
+                if (a.startsWith("--exclude=")) {
+                    out.excludes.add(a.substring("--exclude=".length()));
+                    continue;
+                }
 
                 switch (a) {
                     case "--help":
@@ -117,6 +153,12 @@ public final class Main {
                         break;
                     case "--output":
                         out.output = requireValue(args, ++i, "--output");
+                        break;
+                    case "--exclude":
+                        out.excludes.add(requireValue(args, ++i, "--exclude"));
+                        break;
+                    case "--include-tests":
+                        out.includeTests = true;
                         break;
                     default:
                         if (a.startsWith("--")) {
@@ -150,16 +192,21 @@ public final class Main {
                     "java-to-xmi\n" +
                     "\n" +
                     "Usage:\n" +
-                    "  java -jar java-to-xmi.jar --source <path> [--output <path>]\n" +
+                    "  java -jar java-to-xmi.jar --source <path> [--output <path>] [options]\n" +
                     "\n" +
                     "Options:\n" +
-                    "  --source <path>   Root folder containing Java sources (required)\n" +
-                    "  --output <path>   Output folder (default: ./output)\n" +
-                    "  -h, --help        Show help\n" +
+                    "  --source <path>        Root folder containing Java sources (required)\n" +
+                    "  --output <path>        Output folder (default: ./output)\n" +
+                    "  --exclude <glob>       Exclude paths matching glob (repeatable). Matches are evaluated\n" +
+                    "                         against paths *relative to --source* using '/' separators.\n" +
+                    "                         Also supports --exclude=<glob>.\n" +
+                    "  --include-tests        Include common test folders (default: excluded)\n" +
+                    "  -h, --help             Show help\n" +
                     "\n" +
                     "Examples:\n" +
                     "  java -jar target/java-to-xmi.jar --source samples/mini --output out\n" +
-                    "  java -jar target/java-to-xmi.jar samples/mini\n"
+                    "  java -jar target/java-to-xmi.jar samples/mini\n" +
+                    "  java -jar target/java-to-xmi.jar --source . --exclude \"**/generated/**\" --exclude \"**/*Test.java\"\n"
             );
         }
     }

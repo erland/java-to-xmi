@@ -1,12 +1,11 @@
 package com.example;
 
-public class App implements Greeter {
-    @Override
-    public String greet() {
-        return new Hello("world").greet();
+public class App {
+    public static void main(String[] args) {
+        System.out.println(greet("World"));
     }
 
-    public static void main(String[] args) {
-        System.out.println(new App().greet());
+    public static String greet(String name) {
+        return "Hello, " + name + "!";
     }
 }

@@ -37,3 +37,9 @@ Outputs (Step 1 placeholders):
 
 - Real parsing/extraction and UML/XMI export will be implemented in later steps.
 - The CLI is intentionally dependency-free in Step 1; we can switch to `picocli` later if you prefer.
+
+
+## Step 2: Source scanning options
+
+- `--exclude <glob>` (repeatable) to ignore paths relative to `--source`.
+- `--include-tests` to include `src/test`, `test`, `tests` (default: excluded).
