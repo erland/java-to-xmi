@@ -8,11 +8,12 @@ import org.eclipse.emf.ecore.resource.Resource;
 import org.eclipse.emf.ecore.resource.ResourceSet;
 import org.eclipse.emf.ecore.resource.impl.ResourceSetImpl;
 import org.eclipse.emf.ecore.xmi.XMLResource;
+import org.eclipse.emf.ecore.xmi.impl.XMIResourceImpl;
 import org.eclipse.uml2.uml.Model;
 import org.eclipse.uml2.uml.NamedElement;
 import org.eclipse.uml2.uml.UMLPackage;
-import org.eclipse.uml2.uml.resource.UMLResource;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -59,13 +60,10 @@ public final class XmiWriter {
         // Register UML in the package registry
         resourceSet.getPackageRegistry().put(UMLPackage.eNS_URI, UMLPackage.eINSTANCE);
 
-        // Register a resource factory for .uml and .xmi so we can serialize with UMLResource
-        Map<String, Object> ext = resourceSet.getResourceFactoryRegistry().getExtensionToFactoryMap();
-        ext.put(UMLResource.FILE_EXTENSION, UMLResource.Factory.INSTANCE);
-        ext.put("xmi", UMLResource.Factory.INSTANCE);
+        // Use XMIResourceImpl to ensure <xmi:XMI> root wrapper (some tools expect this).
 
         URI uri = URI.createFileURI(outFile.toAbsolutePath().toString());
-        Resource resource = resourceSet.createResource(uri);
+        Resource resource = new XMIResourceImpl(uri);
         resource.getContents().add(umlModel);
 
         // Deterministic IDs: set explicit xmi:ids on the resource before save.
@@ -81,8 +79,38 @@ public final class XmiWriter {
         options.put(XMLResource.OPTION_SAVE_TYPE_INFORMATION, Boolean.FALSE);
         options.put(XMLResource.OPTION_SCHEMA_LOCATION, Boolean.FALSE);
         // Do not generate UUID-based IDs (some older EMF versions ignore/omit this option).
-        resource.save(options);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        resource.save(baos, options);
+        String xml = baos.toString(StandardCharsets.UTF_8);
+        // Some tools (e.g., EA-style importers) expect an <xmi:XMI> wrapper root.
+        // EMF often serializes the UML Model directly as <uml:Model>. Wrap when needed.
+        String trimmed = xml.trim();
+        if (trimmed.startsWith("<xmi:XMI") || trimmed.contains("<xmi:XMI")) {
+            Files.writeString(outFile, xml, StandardCharsets.UTF_8);
+            return;
+        }
+        // Strip XML declaration if present
+        String inner = xml;
+        if (inner.startsWith("<?xml")) {
+            int idx = inner.indexOf("?>");
+            if (idx >= 0) {
+                inner = inner.substring(idx + 2);
+            }
+        }
+        inner = inner.stripLeading();
+        StringBuilder wrapped = new StringBuilder();
+        wrapped.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        wrapped.append("<xmi:XMI xmi:version=\"2.1\" xmlns:xmi=\"http://schema.omg.org/spec/XMI/2.1\" ");
+        wrapped.append("xmlns:uml=\"http://www.eclipse.org/uml2/3.0.0/UML\">\n");
+        // indent inner document for readability
+        for (String line : inner.split("\\R", -1)) {
+            if (line.isEmpty()) continue;
+            wrapped.append("  ").append(line).append("\n");
+        }
+        wrapped.append("</xmi:XMI>\n");
+        Files.writeString(outFile, wrapped.toString(), StandardCharsets.UTF_8);
     }
+
 
     private static void assignDeterministicIds(XMLResource resource, Model umlModel) {
         // Root first
