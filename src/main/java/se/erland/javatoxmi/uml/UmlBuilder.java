@@ -207,6 +207,7 @@ public final class UmlBuilder {
                 }
                 stats.attributesCreated++;
                 annotateId(p, "Field:" + t.qualifiedName + "#" + f.name + ":" + f.type);
+                annotateJavaTypeIfGeneric(p, f.type);
                 setVisibility(p, f.visibility);
                 if (f.isStatic) p.setIsStatic(true);
                 if (f.isFinal) p.setIsReadOnly(true);
@@ -236,6 +237,7 @@ public final class UmlBuilder {
                 Parameter umlParam = op.createOwnedParameter(p.name, umlType);
                 stats.parametersCreated++;
                 annotateId(umlParam, "Param:" + t.qualifiedName + "#" + signatureKey(m) + "/" + p.name + ":" + p.type);
+                annotateJavaTypeIfGeneric(umlParam, p.type);
             }
 
             // Return
@@ -245,6 +247,7 @@ public final class UmlBuilder {
                 retParam.setDirection(ParameterDirectionKind.RETURN_LITERAL);
                 stats.parametersCreated++;
                 annotateId(retParam, "Return:" + t.qualifiedName + "#" + signatureKey(m) + ":" + m.returnType);
+                annotateJavaTypeIfGeneric(retParam, m.returnType);
             }
         }
     }
@@ -289,11 +292,28 @@ public final class UmlBuilder {
         // Later steps can refine multiplicities and association heuristics.
 
         // Field-based associations
-        for (JField f : t.fields) {
-            String ref = stripGenerics(f.type);
-            Classifier target = classifierByQName.get(ref);
-            if (target == null) continue;
-            if (classifier == target) continue;
+for (JField f : t.fields) {
+    String ref = stripGenerics(f.type);
+
+    // If the field is a collection-like container (e.g., List<T>) and T is a local/project type,
+    // create the association to the element type with multiplicity 0..*.
+    boolean isMany = false;
+    String elementRef = null;
+    if (isCollectionLike(ref)) {
+        String arg0 = firstGenericArg(f.type);
+        if (arg0 != null) {
+            elementRef = stripGenerics(arg0);
+            Classifier elementTarget = resolveLocalClassifier(elementRef);
+            if (elementTarget != null) {
+                ref = elementRef;
+                isMany = true;
+            }
+        }
+    }
+
+    Classifier target = resolveLocalClassifier(ref);
+    if (target == null) continue;
+if (classifier == target) continue;
             if (!(classifier instanceof StructuredClassifier) || !(target instanceof Type)) continue;
 
             // Create an association owned by the nearest common package (we keep it simple: owner package of source)
@@ -306,8 +326,13 @@ public final class UmlBuilder {
 
             // End representing the field on the source classifier pointing to target
             Property endToTarget = assoc.createOwnedEnd(f.name, (Type) target);
-            endToTarget.setLower(1);
-            endToTarget.setUpper(1);
+            if (isMany) {
+                endToTarget.setLower(0);
+                endToTarget.setUpper(-1);
+            } else {
+                endToTarget.setLower(1);
+                endToTarget.setUpper(1);
+            }
             endToTarget.setAggregation(AggregationKind.NONE_LITERAL);
 
             // Opposite end (unnamed or derived from classifier name)
@@ -318,7 +343,7 @@ public final class UmlBuilder {
             endToSource.setAggregation(AggregationKind.NONE_LITERAL);
 
             stats.associationsCreated++;
-            annotateId(assoc, "Association:" + t.qualifiedName + "#" + f.name + "->" + ref);
+            annotateId(assoc, "Association:" + t.qualifiedName + "#" + f.name + "->" + ref + (isMany ? "[*]" : ""));
         }
 
         // Method dependencies
@@ -451,6 +476,60 @@ private PrimitiveType ensurePrimitive(Model model, String name) {
         return pt;
     }
 
+
+
+private Classifier resolveLocalClassifier(String possiblySimpleOrQualified) {
+    if (possiblySimpleOrQualified == null || possiblySimpleOrQualified.isBlank()) return null;
+    Classifier direct = classifierByQName.get(possiblySimpleOrQualified);
+    if (direct != null) return direct;
+
+    // If it's a simple name, try to find a unique qualified match.
+    String name = possiblySimpleOrQualified;
+    if (!name.contains(".")) {
+        java.util.List<String> matches = new java.util.ArrayList<>();
+        for (String qn : classifierByQName.keySet()) {
+            if (qn.equals(name) || qn.endsWith("." + name)) {
+                matches.add(qn);
+            }
+        }
+        matches.sort(String::compareTo);
+        if (!matches.isEmpty()) {
+            return classifierByQName.get(matches.get(0));
+        }
+    }
+    return null;
+}
+
+private static boolean isCollectionLike(String baseType) {
+    if (baseType == null) return false;
+    String b = baseType;
+    // normalize to simple name
+    if (b.contains(".")) b = b.substring(b.lastIndexOf('.') + 1);
+    return "List".equals(b) || "Set".equals(b) || "Collection".equals(b) || "Iterable".equals(b);
+}
+
+private static String firstGenericArg(String javaTypeRef) {
+    if (javaTypeRef == null) return null;
+    String s = javaTypeRef.trim();
+    int lt = s.indexOf('<');
+    int gt = s.lastIndexOf('>');
+    if (lt < 0 || gt < lt) return null;
+    String inner = s.substring(lt + 1, gt).trim();
+    if (inner.isEmpty()) return null;
+    // top-level split (no deep parsing needed here)
+    int depth = 0;
+    StringBuilder buf = new StringBuilder();
+    for (int i = 0; i < inner.length(); i++) {
+        char c = inner.charAt(i);
+        if (c == '<') depth++;
+        else if (c == '>') depth = Math.max(0, depth - 1);
+        if (c == ',' && depth == 0) break;
+        buf.append(c);
+    }
+    String arg = buf.toString().trim();
+    return arg.isEmpty() ? null : arg;
+}
+
     private static String stripGenerics(String t) {
         if (t == null) return "";
         int idx = t.indexOf('<');
@@ -491,6 +570,58 @@ private PrimitiveType ensurePrimitive(Model model, String name) {
         }
         el.setVisibility(k);
     }
+
+
+private static void annotateJavaTypeIfGeneric(Element element, String javaTypeRef) {
+    if (element == null || javaTypeRef == null) return;
+    String s = javaTypeRef.trim();
+    int lt = s.indexOf('<');
+    int gt = s.lastIndexOf('>');
+    if (lt < 0 || gt < lt) return;
+
+    // Preserve full Java generic type string.
+    addAnnotationValue(element, "java-to-xmi:javaType", s);
+
+    // Best-effort extraction of top-level args (no deep parsing).
+    String inner = s.substring(lt + 1, gt).trim();
+    if (inner.isEmpty()) return;
+
+    java.util.List<String> args = splitTopLevelTypeArgs(inner);
+    if (!args.isEmpty()) {
+        addAnnotationValue(element, "java-to-xmi:typeArgs", String.join(", ", args));
+    }
+}
+
+private static java.util.List<String> splitTopLevelTypeArgs(String inner) {
+    java.util.List<String> out = new java.util.ArrayList<>();
+    StringBuilder buf = new StringBuilder();
+    int depth = 0;
+    for (int i = 0; i < inner.length(); i++) {
+        char c = inner.charAt(i);
+        if (c == '<') depth++;
+        else if (c == '>') depth = Math.max(0, depth - 1);
+
+        if (c == ',' && depth == 0) {
+            String part = buf.toString().trim();
+            if (!part.isEmpty()) out.add(part);
+            buf.setLength(0);
+        } else {
+            buf.append(c);
+        }
+    }
+    String last = buf.toString().trim();
+    if (!last.isEmpty()) out.add(last);
+    return out;
+}
+
+private static void addAnnotationValue(Element element, String source, String value) {
+    if (element == null || source == null || value == null) return;
+    EAnnotation ann = element.getEAnnotation(source);
+    if (ann == null) {
+        ann = element.createEAnnotation(source);
+    }
+    ann.getDetails().put("value", value);
+}
 
     private static void annotateId(Element element, String key) {
         if (element == null) return;
