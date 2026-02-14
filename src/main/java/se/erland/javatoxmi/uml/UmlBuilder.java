@@ -56,7 +56,7 @@ import org.eclipse.uml2.uml.StructuredClassifier;
 public final class UmlBuilder {
     public static final String ID_ANNOTATION_SOURCE = "java-to-xmi:id";
 
-    private final UmlBuildStats stats = new UmlBuildStats();
+    private UmlBuildStats stats = new UmlBuildStats();
 
     // Deterministic maps
     private final Map<String, Package> packageByName = new HashMap<>();
@@ -75,6 +75,11 @@ public final class UmlBuilder {
     public Result build(JModel jModel, String modelName) {
         Objects.requireNonNull(jModel, "jModel");
         if (modelName == null || modelName.isBlank()) modelName = "JavaModel";
+
+        // Reset builder state to allow re-use of the same UmlBuilder instance across multiple builds.
+        this.stats = new UmlBuildStats();
+        this.packageByName.clear();
+        this.classifierByQName.clear();
 
         // Ensure UML resource package is registered (important for later XMI writing).
         UMLPackage.eINSTANCE.eClass();

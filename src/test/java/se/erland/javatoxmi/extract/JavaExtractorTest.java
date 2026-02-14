@@ -15,7 +15,11 @@ import static org.junit.jupiter.api.Assertions.*;
 public class JavaExtractorTest {
 
 
-    private static boolean listMentions(List<String> values, String token) {
+    
+    private static final boolean DEBUG = Boolean.parseBoolean(System.getProperty("javaToXmi.debugTests", "false"));
+    private static void debug(String s) { if (DEBUG) System.out.println(s); }
+
+private static boolean listMentions(List<String> values, String token) {
         if (values == null) return false;
         String t = token.toLowerCase();
         return values.stream().filter(v -> v != null).anyMatch(v -> v.toLowerCase().contains(t));
@@ -35,12 +39,12 @@ public class JavaExtractorTest {
         JModel model = new JavaExtractor().extract(source, files);
 
         // Debug output (kept intentionally lightweight) to make failures actionable when running on different machines.
-        System.out.println("[DEBUG] Extracted types (" + model.types.size() + "):");
+        debug("[DEBUG] Extracted types (" + model.types.size() + "):");
         for (JType t : model.types) {
-            System.out.println("[DEBUG]  - " + t.qualifiedName + " extends=" + t.extendsType + " implements=" + t.implementsTypes);
+            debug("[DEBUG]  - " + t.qualifiedName + " extends=" + t.extendsType + " implements=" + t.implementsTypes);
         }
-        System.out.println("[DEBUG] Unresolved types (" + model.unresolvedTypes.size() + "): " + model.unresolvedTypes);
-        System.out.println("[DEBUG] Parse errors (" + model.parseErrors.size() + "): " + model.parseErrors);
+        debug("[DEBUG] Unresolved types (" + model.unresolvedTypes.size() + "): " + model.unresolvedTypes);
+        debug("[DEBUG] Parse errors (" + model.parseErrors.size() + "): " + model.parseErrors);
 
         assertTrue(model.parseErrors.isEmpty(), "Expected no parse errors but got: " + model.parseErrors);
         assertTrue(model.types.size() >= 3, "Expected >= 3 types but got: " + model.types.size());

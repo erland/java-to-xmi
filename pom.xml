@@ -1,5 +1,6 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>se.erland</groupId>
@@ -9,63 +10,76 @@
   <description>CLI tool that converts Java source projects into UML XMI.</description>
 
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <javaparser.version>3.26.2</javaparser.version>
+    <junit.jupiter.version>5.10.2</junit.jupiter.version>
+    <maven.shade.version>3.5.1</maven.shade.version>
+    <maven.surefire.version>3.2.5</maven.surefire.version>
+    <maven.compiler.version>3.13.0</maven.compiler.version>
+    <uml2.uml.version>3.1.0.v201006071150</uml2.uml.version>
+    <uml2.common.version>1.5.0.v201005031530</uml2.common.version>
+    <emf.ecore.version>2.6.0.v20100614-1136</emf.ecore.version>
+    <emf.ecore.common.version>2.6.0.v20100614-1136</emf.ecore.common.version>
+    <emf.ecore.xmi.version>2.5.0.v20100521-1846</emf.ecore.xmi.version>
+    <emf.ecore2xml.version>2.5.0.v20100521-1847</emf.ecore2xml.version>
   </properties>
 
   <dependencies>
-    <!-- Java parsing (Step 3) -->
+    <!-- CLI / parsing -->
     <dependency>
       <groupId>com.github.javaparser</groupId>
       <artifactId>javaparser-core</artifactId>
-      <version>3.26.2</version>
+      <version>${javaparser.version}</version>
     </dependency>
 
-    <!-- UML metamodel (Step 4) - Eclipse UML2 (EMF) -->
-    <!-- Use Maven Central-hosted Eclipse UML2/EMF artifacts (older but reliable coordinates). -->
+    <!-- UML2 / EMF -->
     <dependency>
       <groupId>org.eclipse.uml2</groupId>
       <artifactId>org.eclipse.uml2.uml</artifactId>
-      <version>3.1.0.v201006071150</version>
+      <version>${uml2.uml.version}</version>
     </dependency>
     <dependency>
       <groupId>org.eclipse.uml2</groupId>
       <artifactId>org.eclipse.uml2.common</artifactId>
-      <version>1.5.0.v201005031530</version>
+      <version>${uml2.common.version}</version>
     </dependency>
     <dependency>
       <groupId>org.eclipse.emf</groupId>
       <artifactId>org.eclipse.emf.ecore</artifactId>
-      <version>2.6.0.v20100614-1136</version>
+      <version>${emf.ecore.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.emf</groupId>
+      <artifactId>org.eclipse.emf.common</artifactId>
+      <version>${emf.ecore.common.version}</version>
     </dependency>
     <dependency>
       <groupId>org.eclipse.emf</groupId>
       <artifactId>org.eclipse.emf.ecore.xmi</artifactId>
-      <version>2.5.0.v20100521-1846</version>
+      <version>${emf.ecore.xmi.version}</version>
     </dependency>
     <dependency>
       <groupId>org.eclipse.emf</groupId>
       <artifactId>org.eclipse.emf.mapping.ecore2xml</artifactId>
-      <version>2.5.0.v20100521-1847</version>
+      <version>${emf.ecore2xml.version}</version>
     </dependency>
 
-
-    <!-- Test deps (used in later steps) -->
+    <!-- Tests -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
-      <version>5.10.2</version>
+      <version>${junit.jupiter.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
 
   <build>
-    <finalName>java-to-xmi</finalName>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.13.0</version>
+        <version>${maven.compiler.version}</version>
         <configuration>
           <release>${maven.compiler.release}</release>
         </configuration>
@@ -74,7 +88,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.2.5</version>
+        <version>${maven.surefire.version}</version>
         <configuration>
           <useModulePath>false</useModulePath>
         </configuration>
@@ -83,7 +97,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
-        <version>3.5.1</version>
+        <version>${maven.shade.version}</version>
         <executions>
           <execution>
             <phase>package</phase>
@@ -92,6 +106,16 @@
             </goals>
             <configuration>
               <createDependencyReducedPom>false</createDependencyReducedPom>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>se.erland.javatoxmi.Main</mainClass>

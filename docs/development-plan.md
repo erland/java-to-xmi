@@ -86,6 +86,13 @@ This plan is designed so each step is small enough that an LLM can implement it 
 ---
 
 ## Step 5 — XMI export (UML2/EMF serialization) + determinism hardening
+
+
+## Deterministic XMI output (note)
+EMF/UML2 normally generates non-deterministic `xmi:id` values during serialization, which makes byte-for-byte comparisons fail.
+This project assigns deterministic `xmi:id` values during export based on the `EAnnotation` id (`source="java-to-xmi:id"`) produced by the UML builder,
+with a stable containment-path fallback for elements that lack an explicit annotation.
+
 **Goal:** Write the UML model to XMI consistently and compatibly.
 
 **Deliverables**

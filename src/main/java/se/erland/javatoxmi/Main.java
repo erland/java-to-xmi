@@ -7,6 +7,7 @@ import se.erland.javatoxmi.model.JType;
 import se.erland.javatoxmi.model.UnresolvedTypeRef;
 import se.erland.javatoxmi.uml.UmlBuilder;
 import se.erland.javatoxmi.uml.UmlBuildStats;
+import se.erland.javatoxmi.xmi.XmiWriter;
 
 import org.eclipse.uml2.uml.Model;
 
@@ -96,11 +97,9 @@ public final class Main {
         final Path xmiOut = outputPath.resolve("model.xmi");
         final Path reportOut = outputPath.resolve("report.md");
         try {
-            if (!Files.exists(xmiOut)) {
-                Files.writeString(xmiOut, "<!-- Placeholder. Step 5 will generate real UML XMI here. -->\n");
-            }
+            XmiWriter.write(umlModel, xmiOut);
 
-            // Always write report (it's quick and useful even in scaffold mode)
+// Always write report (it's quick and useful even in scaffold mode)
             StringBuilder report = new StringBuilder();
             report.append("# java-to-xmi report\n\n");
             report.append("This is a scaffold run (Steps 1–3).\n\n");
