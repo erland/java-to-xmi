@@ -15,9 +15,10 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Step 6: Report generation.
+ * Human-readable markdown report (Step 6).
  *
- * Produces a markdown report intended for humans and CI logs.
+ * NOTE: "External type refs" are types we inferred as external (e.g., java.lang.String, java.util.List).
+ * "Unresolved (unknown)" are types we could not qualify at all (likely missing deps or typos).
  */
 public final class ReportGenerator {
 
@@ -43,7 +44,8 @@ public final class ReportGenerator {
         report.append("- Java files discovered: **").append(discoveredJavaFiles.size()).append("**\n");
         report.append("- Types extracted: **").append(jModel.types.size()).append("**\n");
         report.append("- Parse errors: **").append(jModel.parseErrors.size()).append("**\n");
-        report.append("- Unresolved type refs: **").append(jModel.unresolvedTypes.size()).append("**\n");
+        report.append("- External type refs (stubbed): **").append(jModel.externalTypeRefs.size()).append("**\n");
+        report.append("- Unresolved type refs (unknown): **").append(jModel.unresolvedTypes.size()).append("**\n");
         report.append("- Include tests: **").append(includeTests).append("**\n");
         report.append("- Fail on unresolved: **").append(failOnUnresolved).append("**\n");
         report.append("- Excludes: ").append(excludes.isEmpty() ? "_(none)_" : "`" + String.join("`, `", excludes) + "`").append("\n\n");
@@ -58,7 +60,8 @@ public final class ReportGenerator {
         report.append("- Generalizations: **").append(umlStats.generalizationsCreated).append("**\n");
         report.append("- Interface realizations: **").append(umlStats.interfaceRealizationsCreated).append("**\n");
         report.append("- Associations: **").append(umlStats.associationsCreated).append("**\n");
-        report.append("- Dependencies: **").append(umlStats.dependenciesCreated).append("**\n\n");
+        report.append("- Dependencies: **").append(umlStats.dependenciesCreated).append("**\n");
+        report.append("- External stubs: **").append(umlStats.externalStubsCreated).append("**\n\n");
 
         report.append("## Discovered files\n");
         for (Path p : discoveredJavaFiles) {
@@ -87,19 +90,31 @@ public final class ReportGenerator {
             }
         }
 
-        report.append("\n## Unresolved type references\n\n");
-        if (jModel.unresolvedTypes.isEmpty()) {
+        report.append("\n## External type references (stubbed)\n\n");
+        if (jModel.externalTypeRefs.isEmpty()) {
             report.append("_(none)_\n");
         } else {
-            List<UnresolvedTypeRef> ur = new ArrayList<>(jModel.unresolvedTypes);
+            List<UnresolvedTypeRef> ur = new ArrayList<>(jModel.externalTypeRefs);
             ur.sort(Comparator.comparing(u -> u.referencedType + "|" + u.fromQualifiedType + "|" + u.where));
             for (UnresolvedTypeRef u : ur) {
                 report.append("- ").append(u.toString()).append("\n");
             }
         }
 
+        report.append("\n## Unresolved type references (unknown)\n\n");
+        if (jModel.unresolvedTypes.isEmpty()) {
+            report.append("_(none)_\n");
+        } else {
+            List<UnresolvedTypeRef> ur2 = new ArrayList<>(jModel.unresolvedTypes);
+            ur2.sort(Comparator.comparing(u -> u.referencedType + "|" + u.fromQualifiedType + "|" + u.where));
+            for (UnresolvedTypeRef u : ur2) {
+                report.append("- ").append(u.toString()).append("\n");
+            }
+        }
+
         report.append("\n## Notes\n\n");
-        report.append("- This v1 tool uses baseline type resolution (same-source + imports/wildcards). External classpath resolution is planned in a later step.\n");
+        report.append("- External type refs are inferred via imports/wildcards/java.lang. They are created as lightweight stubs in UML for typing.\n");
+        report.append("- Unknown unresolved refs are types we could not qualify at all (missing deps/typos).\n");
         report.append("- Deterministic XMI export is achieved by assigning stable `xmi:id` values before serialization.\n");
 
         Files.createDirectories(reportPath.toAbsolutePath().normalize().getParent());

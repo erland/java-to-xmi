@@ -208,14 +208,19 @@ public final class JavaExtractor {
 
         String resolvedPrimary = ctx.resolve(primary);
         if (resolvedPrimary == null) {
-            // If primary is qualified already, accept it but still record as unresolved if not in project types.
+            // If primary is qualified already, treat as external reference.
             if (primary.contains(".")) {
-                model.unresolvedTypes.add(new UnresolvedTypeRef(primary, fromQn, where));
+                model.externalTypeRefs.add(new UnresolvedTypeRef(primary, fromQn, where));
                 return rendered;
             }
             // primitives, void, var are not unresolved
             if (TypeNameUtil.isNonReferenceType(primary)) {
                 return rendered;
+            }
+            String ext = ctx.qualifyExternal(primary);
+            if (ext != null) {
+                model.externalTypeRefs.add(new UnresolvedTypeRef(ext, fromQn, where));
+                return TypeNameUtil.replacePrimaryBaseName(rendered, primary, ext);
             }
             model.unresolvedTypes.add(new UnresolvedTypeRef(primary, fromQn, where));
             return rendered;
@@ -227,7 +232,16 @@ public final class JavaExtractor {
             if (TypeNameUtil.isNonReferenceType(bn)) continue;
             String r = ctx.resolve(bn);
             if (r == null) {
-                model.unresolvedTypes.add(new UnresolvedTypeRef(bn, fromQn, where));
+                if (bn.contains(".")) {
+                    model.externalTypeRefs.add(new UnresolvedTypeRef(bn, fromQn, where));
+                } else {
+                    String ext = ctx.qualifyExternal(bn);
+                    if (ext != null) {
+                        model.externalTypeRefs.add(new UnresolvedTypeRef(ext, fromQn, where));
+                    } else {
+                        model.unresolvedTypes.add(new UnresolvedTypeRef(bn, fromQn, where));
+                    }
+                }
             }
         }
 
@@ -341,13 +355,50 @@ private static JVisibility visibilityOf(NodeWithModifiers<?> node) {
             }
             return null;
         }
+
+/**
+ * Try to qualify a non-project type name using imports/wildcards/java.lang.
+ * Returns a qualified name if one can be inferred, otherwise null.
+ */
+String qualifyExternal(String typeName) {
+    if (typeName == null || typeName.isBlank()) return null;
+    if (typeName.contains(".")) return typeName;
+
+    // explicit import (even if not a project type)
+    String exp = explicitImportsBySimple.get(typeName);
+    if (exp != null) return exp;
+
+    // java.lang is implicitly imported
+    if (TypeNameUtil.isJavaLangImplicit(typeName)) {
+        return "java.lang." + typeName;
+    }
+
+    // wildcard imports (deterministic order)
+    if (!wildcardImports.isEmpty()) {
+        List<String> sorted = new ArrayList<>(wildcardImports);
+        sorted.sort(String::compareTo);
+        return sorted.get(0) + "." + typeName;
+    }
+    return null;
+}
+
     }
 
     /**
      * Simple type-string utilities for baseline resolution.
      */
     static final class TypeNameUtil {
-        private static final Set<String> PRIMITIVES = Set.of(
+        private static final Set<String> JAVA_LANG_IMPLICIT = Set.of(
+        "String","Object","Class","Throwable","Exception","RuntimeException","Error",
+        "Boolean","Byte","Short","Integer","Long","Float","Double","Character",
+        "Void","Number","Enum","Iterable","Comparable","CharSequence"
+);
+
+static boolean isJavaLangImplicit(String simple) {
+    return simple != null && JAVA_LANG_IMPLICIT.contains(simple);
+}
+
+private static final Set<String> PRIMITIVES = Set.of(
                 "byte","short","int","long","float","double","boolean","char","void"
         );
 

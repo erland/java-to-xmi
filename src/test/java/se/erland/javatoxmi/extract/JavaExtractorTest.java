@@ -43,7 +43,8 @@ private static boolean listMentions(List<String> values, String token) {
         for (JType t : model.types) {
             debug("[DEBUG]  - " + t.qualifiedName + " extends=" + t.extendsType + " implements=" + t.implementsTypes);
         }
-        debug("[DEBUG] Unresolved types (" + model.unresolvedTypes.size() + "): " + model.unresolvedTypes);
+        debug("[DEBUG] External type refs (" + model.externalTypeRefs.size() + "): " + model.externalTypeRefs);
+        debug("[DEBUG] Unresolved (unknown) types (" + model.unresolvedTypes.size() + "): " + model.unresolvedTypes);
         debug("[DEBUG] Parse errors (" + model.parseErrors.size() + "): " + model.parseErrors);
 
         assertTrue(model.parseErrors.isEmpty(), "Expected no parse errors but got: " + model.parseErrors);
@@ -68,12 +69,14 @@ private static boolean listMentions(List<String> values, String token) {
                 "Expected FancyGreeter to have a field referencing List but got fields: " + fancy.get().fields
         );
 
-        // Unresolved type tracking is a best-effort baseline; allow it to vary.
-        if (!model.unresolvedTypes.isEmpty()) {
-            assertTrue(
-                    model.unresolvedTypes.stream().allMatch(u -> u.referencedType != null && !u.referencedType.isBlank()),
-                    "Expected unresolved type entries to have non-blank referencedType values but got: " + model.unresolvedTypes
-            );
+        // External + unresolved tracking is best-effort baseline; allow it to vary.
+        for (var u : model.externalTypeRefs) {
+            assertNotNull(u.referencedType);
+            assertFalse(u.referencedType.isBlank());
+        }
+        for (var u : model.unresolvedTypes) {
+            assertNotNull(u.referencedType);
+            assertFalse(u.referencedType.isBlank());
         }
     }
 }

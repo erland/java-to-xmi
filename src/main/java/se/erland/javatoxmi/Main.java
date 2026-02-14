@@ -150,7 +150,7 @@ public final class Main {
 
         // Exit code rules
         if (parsed.failOnUnresolved && !jModel.unresolvedTypes.isEmpty()) {
-            System.err.println("Unresolved types present (" + jModel.unresolvedTypes.size() + ") and --fail-on-unresolved is set.");
+            System.err.println("Unresolved (unknown) types present (" + jModel.unresolvedTypes.size() + ") and --fail-on-unresolved is set.");
             System.err.println("See report: " + reportOut);
             System.exit(3);
             return;
@@ -160,7 +160,8 @@ public final class Main {
                 "- Report: " + reportOut + "\n" +
                 "- Java files: " + javaFiles.size() + "\n" +
                 "- Types: " + jModel.types.size() + "\n" +
-                "- Unresolved: " + jModel.unresolvedTypes.size());
+                "- External refs: " + jModel.externalTypeRefs.size() + "\n" +
+                "- Unresolved (unknown): " + jModel.unresolvedTypes.size());
 System.exit(0);
     }
 

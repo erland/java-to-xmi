@@ -344,52 +344,102 @@ public final class UmlBuilder {
         }
     }
 
-    private Type resolveUmlType(Model model, String javaTypeName) {
-        // Very minimal type mapping.
-        // - If the type is an in-model classifier, return it.
-        // - Otherwise map primitives/common to UML PrimitiveTypes, or create a placeholder PrimitiveType.
-
-        if (javaTypeName == null || javaTypeName.isBlank()) {
-            return ensurePrimitive(model, "void");
-        }
-
-        String base = stripGenerics(javaTypeName);
-        // arrays
-        if (base.endsWith("[]")) {
-            base = base.substring(0, base.length() - 2);
-        }
-
-        Classifier inModel = classifierByQName.get(base);
-        if (inModel instanceof Type) {
-            return (Type) inModel;
-        }
-
-        // primitives
-        switch (base) {
-            case "boolean":
-                return ensurePrimitive(model, "Boolean");
-            case "byte":
-            case "short":
-            case "int":
-            case "long":
-                return ensurePrimitive(model, "Integer");
-            case "float":
-            case "double":
-                return ensurePrimitive(model, "Real");
-            case "char":
-                return ensurePrimitive(model, "String");
-            case "void":
-                return ensurePrimitive(model, "void");
-            default:
-                // common java.lang
-                if ("String".equals(base) || "java.lang.String".equals(base)) {
-                    return ensurePrimitive(model, "String");
-                }
-                return ensurePrimitive(model, base);
-        }
+    private Type resolveUmlType(Model model, String typeRef) {
+    if (typeRef == null || typeRef.isBlank()) {
+        return ensurePrimitive(model, "Object");
+    }
+    String base = stripGenerics(typeRef);
+    if (base.endsWith("[]")) {
+        base = base.substring(0, base.length() - 2);
     }
 
-    private PrimitiveType ensurePrimitive(Model model, String name) {
+    // Local/project types (qualified names)
+    Classifier inModel = classifierByQName.get(base);
+    if (inModel instanceof Type) {
+        return (Type) inModel;
+    }
+
+    // primitives
+    switch (base) {
+        case "boolean":
+            return ensurePrimitive(model, "Boolean");
+        case "byte":
+        case "short":
+        case "int":
+        case "long":
+            return ensurePrimitive(model, "Integer");
+        case "float":
+        case "double":
+            return ensurePrimitive(model, "Real");
+        case "char":
+            return ensurePrimitive(model, "String");
+        case "void":
+            return ensurePrimitive(model, "void");
+        default:
+            // Common java.lang
+            if ("String".equals(base) || "java.lang.String".equals(base)) {
+                return ensurePrimitive(model, "String");
+            }
+            return ensureExternalStub(model, base);
+    }
+}
+
+private Type ensureExternalStub(Model model, String qualifiedOrSimple) {
+    String qn = qualifiedOrSimple == null ? "Object" : qualifiedOrSimple;
+    String base = stripGenerics(qn);
+    if (base.endsWith("[]")) base = base.substring(0, base.length() - 2);
+
+    // Prefer java.lang.String as a PrimitiveType String
+    if ("java.lang.String".equals(base) || "String".equals(base)) {
+        return ensurePrimitive(model, "String");
+    }
+
+    // Boxed primitives / common types
+    switch (base) {
+        case "java.lang.Boolean":
+        case "Boolean":
+            return ensurePrimitive(model, "Boolean");
+        case "java.lang.Integer":
+        case "Integer":
+        case "java.lang.Long":
+        case "Long":
+        case "java.lang.Short":
+        case "Short":
+        case "java.lang.Byte":
+        case "Byte":
+            return ensurePrimitive(model, "Integer");
+        case "java.lang.Double":
+        case "Double":
+        case "java.lang.Float":
+        case "Float":
+            return ensurePrimitive(model, "Real");
+        case "java.lang.Character":
+        case "Character":
+            return ensurePrimitive(model, "String");
+    }
+
+    String pkgName = "_external";
+    String typeName = base;
+
+    if (base.contains(".")) {
+        int li = base.lastIndexOf('.');
+        pkgName = "_external." + base.substring(0, li);
+        typeName = base.substring(li + 1);
+    }
+
+    Package pkg = getOrCreatePackage(model, pkgName);
+    Type existing = pkg.getOwnedType(typeName);
+    if (existing != null) {
+        return existing;
+    }
+
+    org.eclipse.uml2.uml.Class c = pkg.createOwnedClass(typeName, false);
+    stats.externalStubsCreated++;
+    annotateId(c, "ExternalStub:" + base);
+    return c;
+}
+
+private PrimitiveType ensurePrimitive(Model model, String name) {
         // Put primitive types in a dedicated package to keep the model tidy.
         Package primitivesPkg = getOrCreatePackage(model, "_primitives");
         Type existing = primitivesPkg.getOwnedType(name);
