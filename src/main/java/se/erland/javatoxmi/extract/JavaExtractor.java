@@ -63,6 +63,8 @@ public final class JavaExtractor {
         // Includes top-level types and nested *member* types inside top-level types.
         Map<String, TypeStub> projectTypes = new HashMap<>();
         List<TypeInfo> allTypeInfos = new ArrayList<>();
+        // outerQualifiedName -> (nestedSimpleName -> nestedQualifiedName)
+        Map<String, Map<String, String>> nestedByOuter = new HashMap<>();
         for (ParsedUnit u : units) {
             String pkg = u.cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("");
             for (TypeDeclaration<?> td : u.cu.getTypes()) {
@@ -81,6 +83,10 @@ public final class JavaExtractor {
                     String innerName = ntd.getNameAsString();
                     String innerQn = qualifiedName(pkg, topName + "." + innerName);
                     allTypeInfos.add(new TypeInfo(pkg, innerName, innerQn, topQn, ntd));
+
+                    nestedByOuter
+                            .computeIfAbsent(topQn, __ -> new HashMap<>())
+                            .put(innerName, innerQn);
                 }
             }
         }
@@ -98,16 +104,17 @@ public final class JavaExtractor {
                 if (!isSupportedType(td)) continue;
 
                 // Extract top-level
-                extractOneType(model, ctx, pkg, td, null);
+                String topQn = qualifiedName(pkg, td.getNameAsString());
+                extractOneType(model, ctx, nestedByOuter, List.of(topQn), pkg, td, null);
 
                 // Extract nested member types (one level deep)
-                String topQn = qualifiedName(pkg, td.getNameAsString());
                 String topName = td.getNameAsString();
                 for (BodyDeclaration<?> member : getMembers(td)) {
                     if (!(member instanceof TypeDeclaration)) continue;
                     TypeDeclaration<?> ntd = (TypeDeclaration<?>) member;
                     if (!isSupportedType(ntd)) continue;
-                    extractOneType(model, ctx, pkg, ntd, topQn, topName);
+                    // Within a nested member type, simple names should resolve to siblings declared in the enclosing type.
+                    extractOneType(model, ctx, nestedByOuter, List.of(topQn), pkg, ntd, topQn, topName);
                 }
             }
         }
@@ -119,14 +126,18 @@ public final class JavaExtractor {
 
     private static void extractOneType(JModel model,
                                        ImportContext ctx,
+                                       Map<String, Map<String, String>> nestedByOuter,
+                                       List<String> nestedScopeChain,
                                        String pkg,
                                        TypeDeclaration<?> td,
                                        String outerQn) {
-        extractOneType(model, ctx, pkg, td, outerQn, null);
+        extractOneType(model, ctx, nestedByOuter, nestedScopeChain, pkg, td, outerQn, null);
     }
 
     private static void extractOneType(JModel model,
                                        ImportContext ctx,
+                                       Map<String, Map<String, String>> nestedByOuter,
+                                       List<String> nestedScopeChain,
                                        String pkg,
                                        TypeDeclaration<?> td,
                                        String outerQn,
@@ -151,16 +162,16 @@ public final class JavaExtractor {
                 if (td instanceof ClassOrInterfaceDeclaration) {
                     ClassOrInterfaceDeclaration cid = (ClassOrInterfaceDeclaration) td;
                     if (!cid.getExtendedTypes().isEmpty()) {
-                        extendsType = resolveTypeRef(cid.getExtendedTypes().get(0), ctx, model, qn, "extends");
+                        extendsType = resolveTypeRef(cid.getExtendedTypes().get(0), ctx, nestedByOuter, nestedScopeChain, model, qn, "extends");
                     }
                     for (ClassOrInterfaceType it : cid.getImplementedTypes()) {
-                        implementsTypes.add(resolveTypeRef(it, ctx, model, qn, "implements"));
+                        implementsTypes.add(resolveTypeRef(it, ctx, nestedByOuter, nestedScopeChain, model, qn, "implements"));
                     }
                 } else if (td instanceof EnumDeclaration) {
                     EnumDeclaration ed = (EnumDeclaration) td;
                     // enums can implement interfaces
                     for (ClassOrInterfaceType it : ed.getImplementedTypes()) {
-                        implementsTypes.add(resolveTypeRef(it, ctx, model, qn, "implements"));
+                        implementsTypes.add(resolveTypeRef(it, ctx, nestedByOuter, nestedScopeChain, model, qn, "implements"));
                     }
                 }
 
@@ -184,15 +195,15 @@ public final class JavaExtractor {
                             boolean fStatic = fd.isStatic();
                             boolean fFinal = fd.isFinal();
                             for (VariableDeclarator var : fd.getVariables()) {
-                                String fType = resolveTypeRef(var.getType(), ctx, model, qn, "field '" + var.getNameAsString() + "'");
+                                String fType = resolveTypeRef(var.getType(), ctx, nestedByOuter, nestedScopeChain, model, qn, "field '" + var.getNameAsString() + "'");
                                 fields.add(new JField(var.getNameAsString(), fType, fVis, fStatic, fFinal));
                             }
                         } else if (member instanceof ConstructorDeclaration) {
                             ConstructorDeclaration cd = (ConstructorDeclaration) member;
-                            methods.add(extractConstructor(cd, ctx, model, qn));
+                            methods.add(extractConstructor(cd, ctx, nestedByOuter, nestedScopeChain, model, qn));
                         } else if (member instanceof MethodDeclaration) {
                             MethodDeclaration md = (MethodDeclaration) member;
-                            methods.add(extractMethod(md, ctx, model, qn));
+                            methods.add(extractMethod(md, ctx, nestedByOuter, nestedScopeChain, model, qn));
                         }
                     }
 
@@ -235,32 +246,48 @@ public final class JavaExtractor {
         return Collections.emptyList();
     }
 
-    private static JMethod extractConstructor(ConstructorDeclaration cd, ImportContext ctx, JModel model, String ownerQn) {
+    private static JMethod extractConstructor(ConstructorDeclaration cd,
+                                              ImportContext ctx,
+                                              Map<String, Map<String, String>> nestedByOuter,
+                                              List<String> nestedScopeChain,
+                                              JModel model,
+                                              String ownerQn) {
         JVisibility vis = visibilityOf(cd);
         boolean isStatic = false;
         boolean isAbstract = false;
         List<JParam> params = new ArrayList<>();
         for (Parameter p : cd.getParameters()) {
-            String pType = resolveTypeRef(p.getType(), ctx, model, ownerQn, "ctor '" + cd.getNameAsString() + "' param '" + p.getNameAsString() + "'");
+            String pType = resolveTypeRef(p.getType(), ctx, nestedByOuter, nestedScopeChain, model, ownerQn, "ctor '" + cd.getNameAsString() + "' param '" + p.getNameAsString() + "'");
             params.add(new JParam(p.getNameAsString(), pType));
         }
         return new JMethod(cd.getNameAsString(), "", vis, isStatic, isAbstract, true, params);
     }
 
-    private static JMethod extractMethod(MethodDeclaration md, ImportContext ctx, JModel model, String ownerQn) {
+    private static JMethod extractMethod(MethodDeclaration md,
+                                         ImportContext ctx,
+                                         Map<String, Map<String, String>> nestedByOuter,
+                                         List<String> nestedScopeChain,
+                                         JModel model,
+                                         String ownerQn) {
         JVisibility vis = visibilityOf(md);
         boolean isStatic = md.isStatic();
         boolean isAbstract = md.isAbstract();
-        String ret = resolveTypeRef(md.getType(), ctx, model, ownerQn, "method '" + md.getNameAsString() + "' return");
+        String ret = resolveTypeRef(md.getType(), ctx, nestedByOuter, nestedScopeChain, model, ownerQn, "method '" + md.getNameAsString() + "' return");
         List<JParam> params = new ArrayList<>();
         for (Parameter p : md.getParameters()) {
-            String pType = resolveTypeRef(p.getType(), ctx, model, ownerQn, "method '" + md.getNameAsString() + "' param '" + p.getNameAsString() + "'");
+            String pType = resolveTypeRef(p.getType(), ctx, nestedByOuter, nestedScopeChain, model, ownerQn, "method '" + md.getNameAsString() + "' param '" + p.getNameAsString() + "'");
             params.add(new JParam(p.getNameAsString(), pType));
         }
         return new JMethod(md.getNameAsString(), ret, vis, isStatic, isAbstract, false, params);
     }
 
-    private static String resolveTypeRef(Type t, ImportContext ctx, JModel model, String fromQn, String where) {
+    private static String resolveTypeRef(Type t,
+                                         ImportContext ctx,
+                                         Map<String, Map<String, String>> nestedByOuter,
+                                         List<String> nestedScopeChain,
+                                         JModel model,
+                                         String fromQn,
+                                         String where) {
         // Preserve full textual form, but resolve the outer-most type name where possible.
         String rendered = renderType(t);
         // Extract base names to attempt resolution (e.g. List<String> -> List, Map<K,V> -> Map)
@@ -272,7 +299,7 @@ public final class JavaExtractor {
             return rendered;
         }
 
-        String resolvedPrimary = ctx.resolve(primary);
+        String resolvedPrimary = resolveWithNestedScope(primary, ctx, nestedByOuter, nestedScopeChain);
         if (resolvedPrimary == null) {
             // If primary is qualified already, treat as external reference.
             if (primary.contains(".")) {
@@ -296,7 +323,7 @@ public final class JavaExtractor {
         for (String bn : baseNames) {
             if (bn.equals(primary)) continue;
             if (TypeNameUtil.isNonReferenceType(bn)) continue;
-            String r = ctx.resolve(bn);
+            String r = resolveWithNestedScope(bn, ctx, nestedByOuter, nestedScopeChain);
             if (r == null) {
                 if (bn.contains(".")) {
                     model.externalTypeRefs.add(new UnresolvedTypeRef(bn, fromQn, where));
@@ -315,8 +342,61 @@ public final class JavaExtractor {
         return TypeNameUtil.replacePrimaryBaseName(rendered, primary, resolvedPrimary);
     }
 
-    private static String resolveTypeRef(ClassOrInterfaceType t, ImportContext ctx, JModel model, String fromQn, String where) {
-        return resolveTypeRef((Type) t, ctx, model, fromQn, where);
+    private static String resolveTypeRef(ClassOrInterfaceType t,
+                                         ImportContext ctx,
+                                         Map<String, Map<String, String>> nestedByOuter,
+                                         List<String> nestedScopeChain,
+                                         JModel model,
+                                         String fromQn,
+                                         String where) {
+        return resolveTypeRef((Type) t, ctx, nestedByOuter, nestedScopeChain, model, fromQn, where);
+    }
+
+    /**
+     * Resolve simple names to nested member types visible in the enclosing type scope.
+     *
+     * Supported cases:
+     * - Inside Outer: reference "Inner" -> "pkg.Outer.Inner" if such nested type exists.
+     * - Inside Inner: reference "Sibling" -> "pkg.Outer.Sibling" (enclosing scope).
+     * - Reference "Outer.Inner" (unqualified) -> "pkg.Outer.Inner" if present in project types.
+     */
+    private static String resolveWithNestedScope(String typeName,
+                                                 ImportContext ctx,
+                                                 Map<String, Map<String, String>> nestedByOuter,
+                                                 List<String> nestedScopeChain) {
+        if (typeName == null || typeName.isBlank()) return null;
+
+        // If simple, try nested member types in lexical/enclosing scope first.
+        if (!typeName.contains(".")) {
+            if (nestedScopeChain != null) {
+                for (String scopeQn : nestedScopeChain) {
+                    if (scopeQn == null || scopeQn.isBlank()) continue;
+                    Map<String, String> m = nestedByOuter.get(scopeQn);
+                    if (m == null) continue;
+                    String hit = m.get(typeName);
+                    if (hit != null) return hit;
+                }
+            }
+            return ctx.resolve(typeName);
+        }
+
+        // If qualified but not fully-qualified with a package, try resolving the first segment.
+        // 1) Let ImportContext handle: exact project type, or currentPackage + name.
+        String direct = ctx.resolve(typeName);
+        if (direct != null) return direct;
+
+        // 2) Resolve first segment via imports/package, then append remainder and see if it's a project type.
+        int dot = typeName.indexOf('.');
+        if (dot > 0) {
+            String first = typeName.substring(0, dot);
+            String rest = typeName.substring(dot + 1);
+            String resolvedFirst = ctx.resolve(first);
+            if (resolvedFirst != null && !rest.isBlank()) {
+                String cand = resolvedFirst + "." + rest;
+                if (ctx.projectQualifiedTypes.contains(cand)) return cand;
+            }
+        }
+        return null;
     }
 
     private static String renderType(Type t) {
