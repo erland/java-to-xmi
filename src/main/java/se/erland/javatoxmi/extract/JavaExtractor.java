@@ -111,6 +111,15 @@ public final class JavaExtractor {
 
                 List<JField> fields = new ArrayList<>();
                 List<JMethod> methods = new ArrayList<>();
+                List<String> enumLiterals = new ArrayList<>();
+
+                // Enum literals
+                if (td instanceof EnumDeclaration) {
+                    EnumDeclaration ed = (EnumDeclaration) td;
+                    for (EnumConstantDeclaration ecd : ed.getEntries()) {
+                        enumLiterals.add(ecd.getNameAsString());
+                    }
+                }
 
                 // Fields
                 for (BodyDeclaration<?> member : getMembers(td)) {
@@ -144,7 +153,8 @@ public final class JavaExtractor {
                         extendsType,
                         implementsTypes,
                         fields,
-                        methods
+                        methods,
+                        enumLiterals
                 ));
             }
         }

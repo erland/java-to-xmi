@@ -192,6 +192,17 @@ public final class UmlBuilder {
     }
 
     private void addFeatures(Classifier classifier, JType t) {
+        // Enum literals
+        if (classifier instanceof Enumeration) {
+            Enumeration e = (Enumeration) classifier;
+            for (String lit : t.enumLiterals) {
+                if (lit == null || lit.isBlank()) continue;
+                EnumerationLiteral el = e.createOwnedLiteral(lit);
+                stats.enumLiteralsCreated++;
+                annotateId(el, "EnumLiteral:" + t.qualifiedName + "#" + lit);
+            }
+        }
+
         // Fields -> Properties
         for (JField f : t.fields) {
             if (classifier instanceof StructuredClassifier) {

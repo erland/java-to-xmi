@@ -24,6 +24,9 @@ public final class JType {
     public final List<JField> fields;
     public final List<JMethod> methods;
 
+    /** Enum literal names in declaration order. Only applicable when {@link #kind} is {@link JTypeKind#ENUM}. */
+    public final List<String> enumLiterals;
+
     public JType(String packageName,
                  String name,
                  String qualifiedName,
@@ -35,7 +38,8 @@ public final class JType {
                  String extendsType,
                  List<String> implementsTypes,
                  List<JField> fields,
-                 List<JMethod> methods) {
+                 List<JMethod> methods,
+                 List<String> enumLiterals) {
         this.packageName = Objects.requireNonNullElse(packageName, "");
         this.name = Objects.requireNonNullElse(name, "");
         this.qualifiedName = Objects.requireNonNullElse(qualifiedName, this.name);
@@ -50,5 +54,6 @@ public final class JType {
         this.implementsTypes = implementsTypes == null ? new ArrayList<>() : new ArrayList<>(implementsTypes);
         this.fields = fields == null ? new ArrayList<>() : new ArrayList<>(fields);
         this.methods = methods == null ? new ArrayList<>() : new ArrayList<>(methods);
+        this.enumLiterals = enumLiterals == null ? new ArrayList<>() : new ArrayList<>(enumLiterals);
     }
 }
