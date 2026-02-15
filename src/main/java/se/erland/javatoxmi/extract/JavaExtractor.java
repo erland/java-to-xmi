@@ -60,35 +60,90 @@ public final class JavaExtractor {
         }
 
         // 2) Build project type index (qualified name -> stub)
+        // Includes top-level types and nested *member* types inside top-level types.
         Map<String, TypeStub> projectTypes = new HashMap<>();
+        List<TypeInfo> allTypeInfos = new ArrayList<>();
         for (ParsedUnit u : units) {
             String pkg = u.cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("");
             for (TypeDeclaration<?> td : u.cu.getTypes()) {
-                String qn = qualifiedName(pkg, td.getNameAsString());
-                projectTypes.put(qn, new TypeStub(qn, pkg, td.getNameAsString()));
+                if (!isSupportedType(td)) continue;
+
+                String topName = td.getNameAsString();
+                String topQn = qualifiedName(pkg, topName);
+                TypeInfo top = new TypeInfo(pkg, topName, topQn, null, td);
+                allTypeInfos.add(top);
+
+                // Nested member types (one level deep) inside top-level types
+                for (BodyDeclaration<?> member : getMembers(td)) {
+                    if (!(member instanceof TypeDeclaration)) continue;
+                    TypeDeclaration<?> ntd = (TypeDeclaration<?>) member;
+                    if (!isSupportedType(ntd)) continue;
+                    String innerName = ntd.getNameAsString();
+                    String innerQn = qualifiedName(pkg, topName + "." + innerName);
+                    allTypeInfos.add(new TypeInfo(pkg, innerName, innerQn, topQn, ntd));
+                }
             }
+        }
+        for (TypeInfo ti : allTypeInfos) {
+            projectTypes.put(ti.qualifiedName, new TypeStub(ti.qualifiedName, ti.packageName, ti.simpleName));
         }
 
         // 3) Extract types
+        // We re-walk per compilation unit to keep import context correct for the file.
         for (ParsedUnit u : units) {
             String pkg = u.cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("");
             ImportContext ctx = ImportContext.from(u.cu, pkg, projectTypes.keySet());
 
             for (TypeDeclaration<?> td : u.cu.getTypes()) {
-                if (!(td instanceof ClassOrInterfaceDeclaration
-                        || td instanceof EnumDeclaration
-                        || td instanceof AnnotationDeclaration)) {
-                    continue;
+                if (!isSupportedType(td)) continue;
+
+                // Extract top-level
+                extractOneType(model, ctx, pkg, td, null);
+
+                // Extract nested member types (one level deep)
+                String topQn = qualifiedName(pkg, td.getNameAsString());
+                String topName = td.getNameAsString();
+                for (BodyDeclaration<?> member : getMembers(td)) {
+                    if (!(member instanceof TypeDeclaration)) continue;
+                    TypeDeclaration<?> ntd = (TypeDeclaration<?>) member;
+                    if (!isSupportedType(ntd)) continue;
+                    extractOneType(model, ctx, pkg, ntd, topQn, topName);
                 }
+            }
+        }
 
-                JTypeKind kind = kindOf(td);
-                JVisibility vis = visibilityOf(td);
-                boolean isAbstract = hasModifier(td, Modifier.Keyword.ABSTRACT);
-                boolean isStatic = hasModifier(td, Modifier.Keyword.STATIC);
-                boolean isFinal = hasModifier(td, Modifier.Keyword.FINAL);
+        // Stable ordering for downstream determinism
+        model.types.sort(Comparator.comparing(t -> t.qualifiedName));
+        return model;
+    }
 
-                String name = td.getNameAsString();
-                String qn = qualifiedName(pkg, name);
+    private static void extractOneType(JModel model,
+                                       ImportContext ctx,
+                                       String pkg,
+                                       TypeDeclaration<?> td,
+                                       String outerQn) {
+        extractOneType(model, ctx, pkg, td, outerQn, null);
+    }
+
+    private static void extractOneType(JModel model,
+                                       ImportContext ctx,
+                                       String pkg,
+                                       TypeDeclaration<?> td,
+                                       String outerQn,
+                                       String outerSimpleName) {
+        JTypeKind kind = kindOf(td);
+        JVisibility vis = visibilityOf(td);
+        boolean isAbstract = hasModifier(td, Modifier.Keyword.ABSTRACT);
+        boolean isStatic = hasModifier(td, Modifier.Keyword.STATIC);
+        boolean isFinal = hasModifier(td, Modifier.Keyword.FINAL);
+
+        String name = td.getNameAsString();
+        String qn;
+        if (outerSimpleName != null && !outerSimpleName.isBlank()) {
+            qn = qualifiedName(pkg, outerSimpleName + "." + name);
+        } else {
+            qn = qualifiedName(pkg, name);
+        }
 
                 String extendsType = null;
                 List<String> implementsTypes = new ArrayList<>();
@@ -141,27 +196,28 @@ public final class JavaExtractor {
                         }
                     }
 
-                model.types.add(new JType(
-                        pkg,
-                        name,
-                        qn,
-                        kind,
-                        vis,
-                        isAbstract,
-                        isStatic,
-                        isFinal,
-                        extendsType,
-                        implementsTypes,
-                        fields,
-                        methods,
-                        enumLiterals
-                ));
-            }
-        }
+        model.types.add(new JType(
+                pkg,
+                name,
+                qn,
+                outerQn,
+                kind,
+                vis,
+                isAbstract,
+                isStatic,
+                isFinal,
+                extendsType,
+                implementsTypes,
+                fields,
+                methods,
+                enumLiterals
+        ));
+    }
 
-        // Stable ordering for downstream determinism
-        model.types.sort(Comparator.comparing(t -> t.qualifiedName));
-        return model;
+    private static boolean isSupportedType(TypeDeclaration<?> td) {
+        return (td instanceof ClassOrInterfaceDeclaration
+                || td instanceof EnumDeclaration
+                || td instanceof AnnotationDeclaration);
     }
 
 
@@ -317,6 +373,8 @@ private static JVisibility visibilityOf(NodeWithModifiers<?> node) {
 
     private record TypeStub(String qualifiedName, String pkg, String simpleName) {}
 
+    private record TypeInfo(String packageName, String simpleName, String qualifiedName, String outerQualifiedName, TypeDeclaration<?> declaration) {}
+
     private static final class ImportContext {
         final String currentPackage;
         final Set<String> projectQualifiedTypes;
@@ -348,7 +406,13 @@ private static JVisibility visibilityOf(NodeWithModifiers<?> node) {
             if (typeName == null || typeName.isBlank()) return null;
             // If already qualified, only "resolve" if it's a project type; else return null (external)
             if (typeName.contains(".")) {
-                return projectQualifiedTypes.contains(typeName) ? typeName : null;
+                if (projectQualifiedTypes.contains(typeName)) return typeName;
+                // Support nested member types referenced as Outer.Inner within the same package
+                if (!currentPackage.isBlank()) {
+                    String cand = currentPackage + "." + typeName;
+                    if (projectQualifiedTypes.contains(cand)) return cand;
+                }
+                return null;
             }
             // same package
             String candidateSamePkg = currentPackage.isBlank() ? typeName : currentPackage + "." + typeName;

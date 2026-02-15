@@ -165,20 +165,63 @@ public final class UmlBuilder {
     }
 
     private void createClassifier(Model root, JType t) {
-        Package owner = getOrCreatePackage(root, t.packageName);
+        // Owner can be either a Package (top-level) or an enclosing Classifier (nested member type).
+        Classifier enclosing = null;
+        if (t.outerQualifiedName != null) {
+            enclosing = classifierByQName.get(t.outerQualifiedName);
+        }
 
         Classifier classifier;
         if (t.kind == JTypeKind.INTERFACE) {
-            Interface i = owner.createOwnedInterface(t.name);
+            Interface i = UMLFactory.eINSTANCE.createInterface();
+            i.setName(t.name);
             classifier = i;
         } else if (t.kind == JTypeKind.ENUM) {
-            Enumeration e = owner.createOwnedEnumeration(t.name);
-            // We don't yet extract enum literals explicitly; could be added later.
+            Enumeration e = UMLFactory.eINSTANCE.createEnumeration();
+            e.setName(t.name);
             classifier = e;
         } else {
             // CLASS or ANNOTATION -> UML Class (annotation can be stereotyped later)
-            Class c = owner.createOwnedClass(t.name, t.isAbstract);
+            Class c = UMLFactory.eINSTANCE.createClass();
+            c.setName(t.name);
+            c.setIsAbstract(t.isAbstract);
             classifier = c;
+        }
+
+        if (enclosing != null) {
+            // Nested member type: attach classifier under its enclosing type.
+            // UML2 APIs vary by version; getOwnedMembers() is often derived/unmodifiable.
+            // Prefer concrete-type nested-classifier support when available.
+            boolean added = false;
+            try {
+                java.lang.reflect.Method m = enclosing.getClass().getMethod("getNestedClassifiers");
+                Object v = m.invoke(enclosing);
+                if (v instanceof java.util.List) {
+                    @SuppressWarnings("unchecked")
+                    java.util.List<org.eclipse.uml2.uml.Classifier> list = (java.util.List<org.eclipse.uml2.uml.Classifier>) v;
+                    list.add(classifier);
+                    added = true;
+                }
+            } catch (ReflectiveOperationException ignore) {
+                // fall through
+            }
+
+            if (!added) {
+                // Last-resort fallback (may be unmodifiable in some UML2 versions).
+                try {
+                    ((org.eclipse.uml2.uml.Namespace) enclosing).getOwnedMembers().add((NamedElement) classifier);
+                    added = true;
+                } catch (UnsupportedOperationException ignore) {
+                    // fall through
+                }
+            }
+
+            if (!added) {
+                throw new IllegalStateException("Unable to attach nested member type '" + t.name + "' to enclosing type '" + t.outerQualifiedName + "'");
+            }
+        } else {
+            Package owner = getOrCreatePackage(root, t.packageName);
+            owner.getOwnedTypes().add(classifier);
         }
 
         stats.classifiersCreated++;

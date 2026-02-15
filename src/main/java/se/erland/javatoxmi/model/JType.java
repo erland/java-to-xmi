@@ -9,6 +9,15 @@ public final class JType {
     public final String name;
     public final String qualifiedName;
 
+    /**
+     * Qualified name of the owning/enclosing type if this is a nested member type.
+     *
+     * <p>Example: package "p"; class Outer { class Inner {} }
+     * -> Outer.qualifiedName = "p.Outer", Inner.qualifiedName = "p.Outer.Inner",
+     * and Inner.outerQualifiedName = "p.Outer".</p>
+     */
+    public final String outerQualifiedName;
+
     public final JTypeKind kind;
     public final JVisibility visibility;
     public final boolean isAbstract;
@@ -30,6 +39,7 @@ public final class JType {
     public JType(String packageName,
                  String name,
                  String qualifiedName,
+                 String outerQualifiedName,
                  JTypeKind kind,
                  JVisibility visibility,
                  boolean isAbstract,
@@ -43,6 +53,7 @@ public final class JType {
         this.packageName = Objects.requireNonNullElse(packageName, "");
         this.name = Objects.requireNonNullElse(name, "");
         this.qualifiedName = Objects.requireNonNullElse(qualifiedName, this.name);
+        this.outerQualifiedName = (outerQualifiedName == null || outerQualifiedName.isBlank()) ? null : outerQualifiedName;
 
         this.kind = kind == null ? JTypeKind.CLASS : kind;
         this.visibility = visibility == null ? JVisibility.PACKAGE_PRIVATE : visibility;
