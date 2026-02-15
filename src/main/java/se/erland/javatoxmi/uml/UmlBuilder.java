@@ -289,34 +289,34 @@ public final class UmlBuilder {
         // - If a field references an in-model classifier (resolved), create an Association.
         // - For method signature references, create a Dependency.
         //
-        // Later steps can refine multiplicities and association heuristics.
+        // Later steps can refine multiplicities and association heuristics.        // Field-based associations
+        for (JField f : t.fields) {
+            AssociationTarget at = computeAssociationTarget(f);
+            if (at == null) continue;
 
-        // Field-based associations
-for (JField f : t.fields) {
-    String ref = stripGenerics(f.type);
-
-    // If the field is a collection-like container (e.g., List<T>) and T is a local/project type,
-    // create the association to the element type with multiplicity 0..*.
-    boolean isMany = false;
-    String elementRef = null;
-    if (isCollectionLike(ref)) {
-        String arg0 = firstGenericArg(f.type);
-        if (arg0 != null) {
-            elementRef = stripGenerics(arg0);
-            Classifier elementTarget = resolveLocalClassifier(elementRef);
-            if (elementTarget != null) {
-                ref = elementRef;
-                isMany = true;
-            }
-        }
-    }
-
-    Classifier target = resolveLocalClassifier(ref);
-    if (target == null) continue;
-if (classifier == target) continue;
+            Classifier target = resolveLocalClassifier(at.targetRef);
+            if (target == null) continue;
+            if (target == classifier) continue;
             if (!(classifier instanceof StructuredClassifier) || !(target instanceof Type)) continue;
 
-            // Create an association owned by the nearest common package (we keep it simple: owner package of source)
+            // Reuse the owned attribute created in addFeatures() as the navigable association end.
+            StructuredClassifier sc = (StructuredClassifier) classifier;
+            Property endToTarget = findOwnedAttribute(sc, f.name);
+            if (endToTarget == null) {
+                // Fallback (should be rare): create a property so the association has a named navigable end.
+                endToTarget = sc.createOwnedAttribute(f.name, (Type) target);
+                annotateId(endToTarget, "Field:" + t.qualifiedName + "#" + f.name + ":" + f.type);
+                setVisibility(endToTarget, f.visibility);
+            }
+
+            // Ensure correct typing + multiplicity on the field-end.
+            endToTarget.setType((Type) target);
+            endToTarget.setLower(at.lower);
+            endToTarget.setUpper(at.upper);
+            endToTarget.setAggregation(AggregationKind.NONE_LITERAL);
+            setVisibility(endToTarget, f.visibility);
+
+            // Create an association owned by the source type's package (deterministic and tool-friendly).
             Package ownerPkg = ((Type) classifier).getPackage();
             if (ownerPkg == null) ownerPkg = classifier.getModel();
 
@@ -324,26 +324,26 @@ if (classifier == target) continue;
             assoc.setName(null);
             ownerPkg.getPackagedElements().add(assoc);
 
-            // End representing the field on the source classifier pointing to target
-            Property endToTarget = assoc.createOwnedEnd(f.name, (Type) target);
-            if (isMany) {
-                endToTarget.setLower(0);
-                endToTarget.setUpper(-1);
-            } else {
-                endToTarget.setLower(1);
-                endToTarget.setUpper(1);
-            }
-            endToTarget.setAggregation(AggregationKind.NONE_LITERAL);
-
-            // Opposite end (unnamed or derived from classifier name)
-            String backName = classifier.getName() == null ? "source" : classifier.getName().toLowerCase();
-            Property endToSource = assoc.createOwnedEnd(backName, (Type) classifier);
+            // Opposite end: unnamed, non-navigable by default (keeps diagrams clean).
+            Property endToSource = assoc.createOwnedEnd(null, (Type) classifier);
             endToSource.setLower(0);
             endToSource.setUpper(1);
             endToSource.setAggregation(AggregationKind.NONE_LITERAL);
 
+            // Attach the existing field property as the other end of the association.
+            // IMPORTANT: keep the field Property owned by the Class (ownedAttribute).
+            // Setting owningAssociation/association would re-home the Property under the Association and
+            // remove it from the class' ownedAttributes. Instead, reference it from memberEnds only.
+            if (!assoc.getMemberEnds().contains(endToTarget)) assoc.getMemberEnds().add(endToTarget);
+            if (!assoc.getMemberEnds().contains(endToSource)) assoc.getMemberEnds().add(endToSource);
+
+            // Navigability: UML tools generally treat classifier-owned member ends as navigable.
+            // Avoid adding endToTarget to navigableOwnedEnds because that list is for association-owned ends
+            // and may re-parent the Property.
+
             stats.associationsCreated++;
-            annotateId(assoc, "Association:" + t.qualifiedName + "#" + f.name + "->" + ref + (isMany ? "[*]" : ""));
+            annotateId(assoc, "Association:" + t.qualifiedName + "#" + f.name + "->" + at.targetRef + multiplicityKey(at));
+            annotateId(endToSource, "AssociationEnd:" + t.qualifiedName + "#" + f.name + "<-" + t.qualifiedName);
         }
 
         // Method dependencies
@@ -499,6 +499,111 @@ private Classifier resolveLocalClassifier(String possiblySimpleOrQualified) {
     }
     return null;
 }
+
+    private static final class AssociationTarget {
+        final String targetRef;
+        final int lower;
+        final int upper;
+
+        private AssociationTarget(String targetRef, int lower, int upper) {
+            this.targetRef = targetRef;
+            this.lower = lower;
+            this.upper = upper;
+        }
+    }
+
+    private static AssociationTarget computeAssociationTarget(JField f) {
+        if (f == null || f.type == null || f.type.isBlank()) return null;
+        String raw = f.type.trim();
+
+        // Arrays
+        if (raw.endsWith("[]")) {
+            String base = raw.substring(0, raw.length() - 2).trim();
+            base = stripGenerics(base);
+            return new AssociationTarget(base, 0, -1);
+        }
+
+        String base = stripGenerics(raw);
+        String simple = simpleName(base);
+
+        // Optional<T> => 0..1 to T
+        if (isOptionalLike(simple)) {
+            String arg0 = firstGenericArg(raw);
+            if (arg0 == null) return null;
+            String target = stripArraySuffix(stripGenerics(arg0));
+            return new AssociationTarget(target, 0, 1);
+        }
+
+        // Map<K,V> => 0..* to V (or K if only one arg is present)
+        if (isMapLike(simple)) {
+            String inner = genericInner(raw);
+            if (inner == null) return null;
+            java.util.List<String> args = splitTopLevelTypeArgs(inner);
+            if (args.isEmpty()) return null;
+            String chosen = args.size() >= 2 ? args.get(1) : args.get(0);
+            String target = stripArraySuffix(stripGenerics(chosen));
+            return new AssociationTarget(target, 0, -1);
+        }
+
+        // Collection-like containers (List/Set/Collection/Iterable) => 0..* to element type
+        if (isCollectionLike(base)) {
+            String arg0 = firstGenericArg(raw);
+            if (arg0 == null) return null;
+            String target = stripArraySuffix(stripGenerics(arg0));
+            return new AssociationTarget(target, 0, -1);
+        }
+
+        // Default reference => 0..1 (more realistic than 1..1 for Java fields)
+        String target = stripArraySuffix(stripGenerics(raw));
+        return new AssociationTarget(target, 0, 1);
+    }
+
+    private static String multiplicityKey(AssociationTarget at) {
+        if (at == null) return "";
+        String up = at.upper < 0 ? "*" : Integer.toString(at.upper);
+        return "[" + at.lower + ".." + up + "]";
+    }
+
+    private static Property findOwnedAttribute(StructuredClassifier sc, String name) {
+        if (sc == null || name == null) return null;
+        for (Property p : sc.getOwnedAttributes()) {
+            if (name.equals(p.getName())) return p;
+        }
+        return null;
+    }
+
+    private static boolean isOptionalLike(String simpleName) {
+        return "Optional".equals(simpleName);
+    }
+
+    private static boolean isMapLike(String simpleName) {
+        return "Map".equals(simpleName);
+    }
+
+    private static String simpleName(String qualifiedOrSimple) {
+        if (qualifiedOrSimple == null) return "";
+        String s = qualifiedOrSimple.trim();
+        if (s.endsWith("[]")) s = s.substring(0, s.length() - 2);
+        int li = s.lastIndexOf('.');
+        return li >= 0 ? s.substring(li + 1) : s;
+    }
+
+    private static String stripArraySuffix(String t) {
+        if (t == null) return null;
+        String s = t.trim();
+        if (s.endsWith("[]")) return s.substring(0, s.length() - 2).trim();
+        return s;
+    }
+
+    private static String genericInner(String javaTypeRef) {
+        if (javaTypeRef == null) return null;
+        String s = javaTypeRef.trim();
+        int lt = s.indexOf('<');
+        int gt = s.lastIndexOf('>');
+        if (lt < 0 || gt < lt) return null;
+        String inner = s.substring(lt + 1, gt).trim();
+        return inner.isEmpty() ? null : inner;
+    }
 
 private static boolean isCollectionLike(String baseType) {
     if (baseType == null) return false;
