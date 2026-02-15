@@ -27,6 +27,7 @@ import org.eclipse.uml2.uml.resource.UMLResource;
 import se.erland.javatoxmi.model.JField;
 import se.erland.javatoxmi.model.JMethod;
 import se.erland.javatoxmi.model.JModel;
+import se.erland.javatoxmi.model.JAnnotationUse;
 import se.erland.javatoxmi.model.JParam;
 import se.erland.javatoxmi.model.JType;
 import se.erland.javatoxmi.model.JTypeKind;
@@ -127,7 +128,52 @@ public final class UmlBuilder {
             addStructuralRelations(c, t);
         }
 
+        // Step 3/4: Java annotation profile + stereotypes
+        // Build the profile only if there are annotations present.
+        boolean hasAnyAnnotations = false;
+        for (JType t : types) {
+            if (t.annotations != null && !t.annotations.isEmpty()) {
+                hasAnyAnnotations = true;
+                break;
+            }
+        }
+        if (hasAnyAnnotations) {
+            applyJavaAnnotationProfile(model, types);
+        }
+
         return new Result(model, stats);
+    }
+
+    private void applyJavaAnnotationProfile(Model model, List<JType> types) {
+        JavaAnnotationProfileBuilder profileBuilder = new JavaAnnotationProfileBuilder();
+        org.eclipse.uml2.uml.Profile profile = profileBuilder.ensureProfile(model);
+
+        for (JType t : types) {
+            if (t.annotations == null || t.annotations.isEmpty()) continue;
+
+            JavaAnnotationProfileBuilder.MetaclassTarget target;
+            if (t.kind == JTypeKind.INTERFACE) {
+                target = JavaAnnotationProfileBuilder.MetaclassTarget.INTERFACE;
+            } else if (t.kind == JTypeKind.ENUM) {
+                target = JavaAnnotationProfileBuilder.MetaclassTarget.ENUMERATION;
+            } else {
+                target = JavaAnnotationProfileBuilder.MetaclassTarget.CLASS;
+            }
+
+            for (JAnnotationUse ann : t.annotations) {
+                if (ann == null || ann.simpleName == null || ann.simpleName.isBlank()) continue;
+
+                org.eclipse.uml2.uml.Stereotype st = profileBuilder.ensureStereotype(profile, ann.simpleName, ann.qualifiedName);
+                profileBuilder.ensureMetaclassExtension(profile, st, target);
+
+                if (ann.values != null) {
+                    for (String k : ann.values.keySet()) {
+                        if (k == null || k.isBlank()) continue;
+                        profileBuilder.ensureStringAttribute(profile, st, k);
+                    }
+                }
+            }
+        }
     }
 
     private Package getOrCreatePackage(Model root, String javaPackageName) {

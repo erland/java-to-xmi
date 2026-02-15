@@ -119,7 +119,7 @@ public final class Main {
 
         // Step 5: XMI export
         try {
-            XmiWriter.write(umlResult.umlModel, xmiOut);
+            XmiWriter.write(umlResult.umlModel, jModel, xmiOut);
         } catch (IOException e) {
             System.err.println("Error: could not write XMI to: " + xmiOut);
             System.err.println(e.getMessage());

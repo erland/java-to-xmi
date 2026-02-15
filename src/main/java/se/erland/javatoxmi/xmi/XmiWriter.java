@@ -12,6 +12,7 @@ import org.eclipse.emf.ecore.xmi.impl.XMIResourceImpl;
 import org.eclipse.uml2.uml.Model;
 import org.eclipse.uml2.uml.NamedElement;
 import org.eclipse.uml2.uml.UMLPackage;
+import se.erland.javatoxmi.model.JModel;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -40,6 +41,13 @@ public final class XmiWriter {
     private XmiWriter() {}
 
     public static void write(Model umlModel, Path outFile) throws IOException {
+        write(umlModel, null, outFile);
+    }
+
+    /**
+     * Write XMI and (optionally) inject stereotype applications based on the extracted {@link JModel}.
+     */
+    public static void write(Model umlModel, JModel jModel, Path outFile) throws IOException {
         if (umlModel == null) {
             throw new IllegalArgumentException("umlModel must not be null");
         }
@@ -82,13 +90,25 @@ public final class XmiWriter {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         resource.save(baos, options);
         String xml = baos.toString(StandardCharsets.UTF_8);
-        // Some tools (e.g., EA-style importers) expect an <xmi:XMI> wrapper root.
-        // EMF often serializes the UML Model directly as <uml:Model>. Wrap when needed.
+
+        // Always produce a wrapped <xmi:XMI> document for maximum tool compatibility.
+        String wrapped = ensureXmiWrapper(xml);
+
+        // Optional: inject stereotype applications via XMI extension.
+        if (jModel != null) {
+            wrapped = StereotypeXmiInjector.inject(umlModel, jModel, wrapped);
+        }
+
+        Files.writeString(outFile, wrapped, StandardCharsets.UTF_8);
+    }
+
+    private static String ensureXmiWrapper(String xml) {
         String trimmed = xml.trim();
         if (trimmed.startsWith("<xmi:XMI") || trimmed.contains("<xmi:XMI")) {
-            Files.writeString(outFile, xml, StandardCharsets.UTF_8);
-            return;
+            // Ensure our namespace is available (idempotent insertion).
+            return ensureNamespaceOnRoot(xml, "j2x", StereotypeXmiInjector.J2X_NS);
         }
+
         // Strip XML declaration if present
         String inner = xml;
         if (inner.startsWith("<?xml")) {
@@ -101,14 +121,29 @@ public final class XmiWriter {
         StringBuilder wrapped = new StringBuilder();
         wrapped.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         wrapped.append("<xmi:XMI xmi:version=\"2.1\" xmlns:xmi=\"http://schema.omg.org/spec/XMI/2.1\" ");
-        wrapped.append("xmlns:uml=\"http://www.eclipse.org/uml2/3.0.0/UML\">\n");
+        wrapped.append("xmlns:uml=\"http://www.eclipse.org/uml2/3.0.0/UML\" ");
+        wrapped.append("xmlns:j2x=\"").append(StereotypeXmiInjector.J2X_NS).append("\">\n");
         // indent inner document for readability
         for (String line : inner.split("\\R", -1)) {
             if (line.isEmpty()) continue;
             wrapped.append("  ").append(line).append("\n");
         }
         wrapped.append("</xmi:XMI>\n");
-        Files.writeString(outFile, wrapped.toString(), StandardCharsets.UTF_8);
+        return wrapped.toString();
+    }
+
+    private static String ensureNamespaceOnRoot(String xml, String prefix, String ns) {
+        String needle = "xmlns:" + prefix + "=\"";
+        if (xml.contains(needle)) return xml;
+
+        int start = xml.indexOf("<xmi:XMI");
+        if (start < 0) return xml;
+        int end = xml.indexOf('>', start);
+        if (end < 0) return xml;
+
+        String before = xml.substring(0, end);
+        String after = xml.substring(end);
+        return before + " xmlns:" + prefix + "=\"" + ns + "\"" + after;
     }
 
 
