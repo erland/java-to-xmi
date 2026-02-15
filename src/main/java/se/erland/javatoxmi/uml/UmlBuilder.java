@@ -148,6 +148,7 @@ public final class UmlBuilder {
         JavaAnnotationProfileBuilder profileBuilder = new JavaAnnotationProfileBuilder();
         org.eclipse.uml2.uml.Profile profile = profileBuilder.ensureProfile(model);
 
+        // Determinism: apply in a stable order (types, annotations, and tag keys sorted).
         for (JType t : types) {
             if (t.annotations == null || t.annotations.isEmpty()) continue;
 
@@ -160,14 +161,23 @@ public final class UmlBuilder {
                 target = JavaAnnotationProfileBuilder.MetaclassTarget.CLASS;
             }
 
-            for (JAnnotationUse ann : t.annotations) {
+            List<JAnnotationUse> anns = new ArrayList<>(t.annotations);
+            anns.sort((a, b) -> {
+                String aq = a == null ? "" : (a.qualifiedName != null ? a.qualifiedName : (a.simpleName != null ? a.simpleName : ""));
+                String bq = b == null ? "" : (b.qualifiedName != null ? b.qualifiedName : (b.simpleName != null ? b.simpleName : ""));
+                return aq.compareTo(bq);
+            });
+
+            for (JAnnotationUse ann : anns) {
                 if (ann == null || ann.simpleName == null || ann.simpleName.isBlank()) continue;
 
                 org.eclipse.uml2.uml.Stereotype st = profileBuilder.ensureStereotype(profile, ann.simpleName, ann.qualifiedName);
                 profileBuilder.ensureMetaclassExtension(profile, st, target);
 
                 if (ann.values != null) {
-                    for (String k : ann.values.keySet()) {
+                    List<String> keys = new ArrayList<>(ann.values.keySet());
+                    keys.sort(String::compareTo);
+                    for (String k : keys) {
                         if (k == null || k.isBlank()) continue;
                         profileBuilder.ensureStringAttribute(profile, st, k);
                     }
@@ -284,6 +294,8 @@ public final class UmlBuilder {
         // Enum literals
         if (classifier instanceof Enumeration) {
             Enumeration e = (Enumeration) classifier;
+            // Preserve declaration order (required by tests and typically what UML tools expect).
+            // Determinism is achieved by the extractor producing enumLiterals in source order.
             for (String lit : t.enumLiterals) {
                 if (lit == null || lit.isBlank()) continue;
                 EnumerationLiteral el = e.createOwnedLiteral(lit);
@@ -293,7 +305,18 @@ public final class UmlBuilder {
         }
 
         // Fields -> Properties
-        for (JField f : t.fields) {
+        List<JField> fields = new ArrayList<>(t.fields);
+        fields.sort((a, b) -> {
+            String an = a == null ? "" : (a.name == null ? "" : a.name);
+            String bn = b == null ? "" : (b.name == null ? "" : b.name);
+            int c = an.compareTo(bn);
+            if (c != 0) return c;
+            String at = a == null ? "" : (a.type == null ? "" : a.type);
+            String bt = b == null ? "" : (b.type == null ? "" : b.type);
+            return at.compareTo(bt);
+        });
+
+        for (JField f : fields) {
             if (classifier instanceof StructuredClassifier) {
                 Type umlType = resolveUmlType(classifier.getModel(), f.type);
                 Property p;
@@ -315,7 +338,9 @@ public final class UmlBuilder {
         }
 
         // Methods -> Operations
-        for (JMethod m : t.methods) {
+        List<JMethod> methods = new ArrayList<>(t.methods);
+        methods.sort((a, b) -> signatureKey(a).compareTo(signatureKey(b)));
+        for (JMethod m : methods) {
             if (!(classifier instanceof org.eclipse.uml2.uml.Classifier)) continue;
             Operation op;
             if (classifier instanceof Class) {

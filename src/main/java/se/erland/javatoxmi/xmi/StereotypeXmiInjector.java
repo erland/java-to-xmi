@@ -11,9 +11,9 @@ import se.erland.javatoxmi.uml.JavaAnnotationProfileBuilder;
 import se.erland.javatoxmi.uml.UmlIdStrategy;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Step 5 (recommended approach) — Apply stereotypes by injecting deterministic XMI extensions.
@@ -42,13 +42,28 @@ final class StereotypeXmiInjector {
 
         Map<String, String> stereotypeIdByQualifiedName = indexStereotypesByQualifiedName(profile);
 
+        // Determinism: sort types + annotations + tags for stable injected output.
+        List<JType> types = new ArrayList<>(jModel.types);
+        types.sort((a, b) -> {
+            String aq = a == null ? "" : (a.qualifiedName == null ? "" : a.qualifiedName);
+            String bq = b == null ? "" : (b.qualifiedName == null ? "" : b.qualifiedName);
+            return aq.compareTo(bq);
+        });
+
         List<InjectedApplication> apps = new ArrayList<>();
-        for (JType t : jModel.types) {
+        for (JType t : types) {
             if (t.annotations == null || t.annotations.isEmpty()) continue;
 
             String baseId = "_" + UmlIdStrategy.id("Classifier:" + t.qualifiedName);
 
-            for (JAnnotationUse ann : t.annotations) {
+            List<JAnnotationUse> anns = new ArrayList<>(t.annotations);
+            anns.sort((a, b) -> {
+                String aq = a == null ? "" : (a.qualifiedName != null ? a.qualifiedName : (a.simpleName != null ? a.simpleName : ""));
+                String bq = b == null ? "" : (b.qualifiedName != null ? b.qualifiedName : (b.simpleName != null ? b.simpleName : ""));
+                return aq.compareTo(bq);
+            });
+
+            for (JAnnotationUse ann : anns) {
                 if (ann == null) continue;
                 String qn = ann.qualifiedName;
                 if (qn == null) qn = "";
@@ -78,6 +93,16 @@ final class StereotypeXmiInjector {
 
         String profileId = "_" + getAnnotatedIdOrDefault(profile, UmlIdStrategy.id("Profile:" + JavaAnnotationProfileBuilder.PROFILE_NAME));
 
+        apps.sort((a, b) -> {
+            int c = nullSafe(a.baseId).compareTo(nullSafe(b.baseId));
+            if (c != 0) return c;
+            c = nullSafe(a.stereotypeId).compareTo(nullSafe(b.stereotypeId));
+            if (c != 0) return c;
+            c = nullSafe(a.stereotypeQualifiedName).compareTo(nullSafe(b.stereotypeQualifiedName));
+            if (c != 0) return c;
+            return nullSafe(a.xmiId).compareTo(nullSafe(b.xmiId));
+        });
+
         String extensionXml = buildExtension(profileId, apps);
 
         return injectBeforeClosingXmi(xmiWrappedXml, extensionXml);
@@ -93,7 +118,7 @@ final class StereotypeXmiInjector {
     }
 
     private static Map<String, String> indexStereotypesByQualifiedName(Profile profile) {
-        Map<String, String> out = new HashMap<>();
+        Map<String, String> out = new TreeMap<>();
         for (Stereotype st : profile.getOwnedStereotypes()) {
             String id = "_" + getAnnotatedIdOrDefault(st, null);
             if (id == null) continue;
@@ -138,7 +163,9 @@ final class StereotypeXmiInjector {
             }
             sb.append(">\n");
 
-            for (Map.Entry<String, String> e : a.tags.entrySet()) {
+            // Determinism: tags in key order.
+            Map<String, String> tags = new TreeMap<>(a.tags);
+            for (Map.Entry<String, String> e : tags.entrySet()) {
                 String k = e.getKey();
                 if (k == null || k.isBlank()) continue;
                 String v = e.getValue();
@@ -180,6 +207,10 @@ final class StereotypeXmiInjector {
         String baseId;
         String stereotypeId;
         String stereotypeQualifiedName;
-        final Map<String, String> tags = new HashMap<>();
+        final Map<String, String> tags = new TreeMap<>();
+    }
+
+    private static String nullSafe(String s) {
+        return s == null ? "" : s;
     }
 }

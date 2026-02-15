@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.WeakHashMap;
 
 import org.eclipse.emf.ecore.EAnnotation;
+import org.eclipse.emf.ecore.EObject;
 import org.eclipse.uml2.uml.Element;
 import org.eclipse.uml2.uml.ElementImport;
 import org.eclipse.uml2.uml.ExtensionEnd;
@@ -49,6 +50,11 @@ import org.eclipse.uml2.uml.resource.UMLResource;
 public final class JavaAnnotationProfileBuilder {
 
     public static final String PROFILE_NAME = "JavaAnnotations";
+    /**
+     * Stable profile URI used for deterministic output. If left unset, UML2 may generate
+     * a URI containing a random/UUID-like segment during Profile#define().
+     */
+    public static final String PROFILE_URI = "http://java-to-xmi/schemas/JavaAnnotations/1.0";
     public static final String JAVA_ANN_SOURCE = "java-to-xmi:java";
 
     // Tracks used stereotype names to avoid collisions.
@@ -379,12 +385,42 @@ public final class JavaAnnotationProfileBuilder {
             if (!defined) {
                 java.lang.reflect.Method define = profile.getClass().getMethod("define");
                 define.invoke(profile);
+                normalizeDefinedProfile(profile);
             }
         } catch (NoSuchMethodException nsme) {
             // Older/newer variants may not expose isDefined/define the same way.
         } catch (Throwable t) {
             // If define fails, extension creation will not work. Surface the root cause.
             throw new IllegalStateException("Profile.define() failed; cannot create metaclass extensions.", t);
+        }
+    }
+
+    /**
+     * After Profile#define(), UML2 materializes an Ecore representation into an EAnnotation.
+     * Ensure the EPackage nsURI is stable for deterministic XMI output.
+     */
+    private static void normalizeDefinedProfile(Profile profile) {
+        if (profile == null) return;
+        final String desiredUri = PROFILE_URI;
+
+        try {
+            for (EAnnotation ea : profile.getEAnnotations()) {
+                if (ea == null) continue;
+                // UML2 stores the generated Ecore package under this well-known source.
+                if (!"http://www.eclipse.org/uml2/2.0.0/UML".equals(ea.getSource())) continue;
+                for (EObject c : ea.getContents()) {
+                    if (c instanceof org.eclipse.emf.ecore.EPackage ep) {
+                        if (!Objects.equals(ep.getNsURI(), desiredUri)) {
+                            ep.setNsURI(desiredUri);
+                        }
+                        if (ep.getNsPrefix() == null || ep.getNsPrefix().isBlank()) {
+                            ep.setNsPrefix(PROFILE_NAME);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // Best-effort only.
         }
     }
 
