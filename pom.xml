@@ -20,6 +20,8 @@
     <maven.compiler.version>3.13.0</maven.compiler.version>
     <uml2.uml.version>3.1.0.v201006071150</uml2.uml.version>
     <uml2.common.version>1.5.0.v201005031530</uml2.common.version>
+    <!-- UML2 resources bundle (contains UML.metamodel.uml) is only published for this version in Maven Central. -->
+    <uml2.resources.version>3.1.0.v201005031530</uml2.resources.version>
     <emf.ecore.version>2.6.0.v20100614-1136</emf.ecore.version>
     <emf.ecore.common.version>2.6.0.v20100614-1136</emf.ecore.common.version>
     <emf.ecore.xmi.version>2.5.0.v20100521-1846</emf.ecore.xmi.version>
@@ -44,6 +46,12 @@
       <groupId>org.eclipse.uml2</groupId>
       <artifactId>org.eclipse.uml2.common</artifactId>
       <version>${uml2.common.version}</version>
+    </dependency>
+    <!-- Required to load UMLResource.UML_METAMODEL_URI during tests (Profile metaclass extensions). -->
+    <dependency>
+      <groupId>org.eclipse.uml2</groupId>
+      <artifactId>org.eclipse.uml2.uml.resources</artifactId>
+      <version>${uml2.resources.version}</version>
     </dependency>
     <dependency>
       <groupId>org.eclipse.emf</groupId>
@@ -126,29 +134,41 @@
           </execution>
         </executions>
       </plugin>
-<plugin>
-    <groupId>org.jacoco</groupId>
-    <artifactId>jacoco-maven-plugin</artifactId>
-    <version>${jacoco.version}</version>
-                <configuration>
-                    <inclBootstrapClasses>false</inclBootstrapClasses>
-                </configuration>
-    <executions>
-        <execution>
+
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <configuration>
+          <inclBootstrapClasses>false</inclBootstrapClasses>
+        </configuration>
+        <executions>
+          <execution>
             <id>prepare-agent</id>
             <goals>
-                <goal>prepare-agent</goal>
+              <goal>prepare-agent</goal>
             </goals>
-        </execution>
-        <execution>
+            <configuration>
+              <!--
+                Eclipse UML2/EMF contains generated switch methods that can exceed JaCoCo's
+                instrumentable method size (MethodTooLargeException). We only care about
+                coverage for this project, so exclude those packages from the agent.
+              -->
+              <excludes>
+                <exclude>org/eclipse/uml2/**</exclude>
+                <exclude>org/eclipse/emf/**</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+          <execution>
             <id>report</id>
             <phase>test</phase>
             <goals>
-                <goal>report</goal>
+              <goal>report</goal>
             </goals>
-        </execution>
-    </executions>
-</plugin>
+          </execution>
+        </executions>
+      </plugin>
 
     </plugins>
   </build>

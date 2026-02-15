@@ -1,18 +1,32 @@
 package se.erland.javatoxmi.uml;
 
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
 
 import org.eclipse.emf.ecore.EAnnotation;
 import org.eclipse.uml2.uml.Element;
+import org.eclipse.uml2.uml.ElementImport;
+import org.eclipse.uml2.uml.ExtensionEnd;
+import org.eclipse.uml2.uml.Extension;
 import org.eclipse.uml2.uml.Model;
+import org.eclipse.uml2.uml.PackageImport;
+import org.eclipse.uml2.uml.AggregationKind;
 import org.eclipse.uml2.uml.PrimitiveType;
 import org.eclipse.uml2.uml.Profile;
 import org.eclipse.uml2.uml.Property;
 import org.eclipse.uml2.uml.Stereotype;
 import org.eclipse.uml2.uml.UMLFactory;
+import org.eclipse.uml2.uml.UMLPackage;
+import org.eclipse.emf.common.util.URI;
+import org.eclipse.emf.ecore.resource.Resource;
+import org.eclipse.emf.ecore.resource.ResourceSet;
+import org.eclipse.emf.ecore.resource.impl.ResourceSetImpl;
+import org.eclipse.emf.ecore.xmi.impl.XMIResourceImpl;
+import org.eclipse.emf.ecore.util.EcoreUtil;
+import org.eclipse.uml2.uml.PackageableElement;
+import org.eclipse.uml2.uml.resource.UMLResource;
 
 /**
  * Step 3 — Profile builder for Java annotations.
@@ -23,8 +37,14 @@ import org.eclipse.uml2.uml.UMLFactory;
  * - Create/reuse stereotype attributes (tag definitions) as String
  * - Attach deterministic IDs and store qualified-name metadata
  *
- * NOTE: This step intentionally does not create metaclass Extensions nor apply the profile.
- * Those are handled in later steps.
+ * NOTE: Step 3 did not create metaclass Extensions nor apply the profile.
+ * Step 4 adds metaclass Extensions.
+ *
+ * Compatibility note:
+ * Eclipse UML2 3.1 is very strict about Profile/metamodel/metaclass identity when calling
+ * {@code Stereotype#createExtension}. In practice (especially with in-memory models used in tests)
+ * this may throw {@link IllegalArgumentException} even when references look correct. For that case
+ * we fall back to manual creation of the {@link Extension} association.
  */
 public final class JavaAnnotationProfileBuilder {
 
@@ -33,6 +53,13 @@ public final class JavaAnnotationProfileBuilder {
 
     // Tracks used stereotype names to avoid collisions.
     private final Map<String, String> stereotypeNameToQualified = new HashMap<>();
+
+    /** The UML metaclass that a stereotype should extend for MVP. */
+    public enum MetaclassTarget {
+        CLASS,
+        INTERFACE,
+        ENUMERATION
+    }
 
     /** Ensure the JavaAnnotations profile exists under the given UML model. */
     public Profile ensureProfile(Model model) {
@@ -117,6 +144,102 @@ public final class JavaAnnotationProfileBuilder {
         return p;
     }
 
+    /**
+     * Step 4 — Ensure the stereotype extends a specific UML metaclass (Class/Interface/Enumeration).
+     *
+     * This creates a metaclass reference in the profile (if needed) and an Extension association
+     * from the stereotype to that metaclass.
+     */
+    public Extension ensureMetaclassExtension(Profile profile, Stereotype st, MetaclassTarget target) {
+        Objects.requireNonNull(profile, "profile");
+        Objects.requireNonNull(st, "st");
+        Objects.requireNonNull(target, "target");
+
+        org.eclipse.uml2.uml.Class metaclass;
+        switch (target) {
+            case CLASS:
+                metaclass = ensureMetaclassReference(profile, "Class");
+                break;
+            case INTERFACE:
+                metaclass = ensureMetaclassReference(profile, "Interface");
+                break;
+            case ENUMERATION:
+                metaclass = ensureMetaclassReference(profile, "Enumeration");
+                break;
+            default:
+                throw new IllegalArgumentException("Unsupported metaclass target: " + target);
+        }
+
+        // Avoid duplicates: UML2 3.1 sometimes doesn't maintain Stereotype#getExtensions reliably
+        // for manually-constructed extensions, so we also scan the Profile's packaged elements.
+        Extension existing = findExistingExtension(profile, st, metaclass);
+        if (existing != null) {
+            annotateIdIfMissing(existing, "Extension:" + st.getName() + "->" + metaclass.getName());
+            for (Property p : existing.getOwnedEnds()) {
+                if (p == null) continue;
+                annotateIdIfMissing(p, "ExtensionEnd:" + st.getName() + "->" + metaclass.getName() + "#" + (p.getName() == null ? "" : p.getName()));
+            }
+            return existing;
+        }
+
+        Extension ext;
+        try {
+            // UML2 3.1 can be extremely strict about profile/metaclass identity and may throw
+            // IllegalArgumentException even when references look correct. Fall back to manual
+            // construction in that case.
+            ext = st.createExtension(metaclass, false);
+        } catch (IllegalArgumentException ex) {
+            ext = createExtensionManually(profile, st, metaclass, false);
+        }
+        annotateIdIfMissing(ext, "Extension:" + st.getName() + "->" + metaclass.getName());
+        for (Property p : ext.getMemberEnds()) {
+            if (p == null) continue;
+            annotateIdIfMissing(p, "ExtensionEnd:" + st.getName() + "->" + metaclass.getName() + "#" + (p.getName() == null ? "" : p.getName()));
+        }
+        return ext;
+    }
+
+    /**
+     * Manual construction of an Extension association (fallback when UML2 refuses createExtension).
+     * Produces valid XMI for most UML tools and avoids version-specific precondition checks.
+     */
+    private static Extension createExtensionManually(Profile profile, Stereotype st, org.eclipse.uml2.uml.Class metaclass, boolean required) {
+        Extension ext = UMLFactory.eINSTANCE.createExtension();
+        ext.setName(st.getName() + "_extends_" + metaclass.getName());
+
+        // Metaclass end ("base_<Metaclass>")
+        // NOTE: In UML2 3.1, Extension::ownedEnd is typed as ExtensionEnd (not Property).
+        // ExtensionEnd is a subclass of Property, so we use ExtensionEnd for BOTH ends.
+        ExtensionEnd baseEnd = UMLFactory.eINSTANCE.createExtensionEnd();
+        baseEnd.setName("base_" + metaclass.getName());
+        baseEnd.setType(metaclass);
+        // UML2 3.1 Extension does not expose setRequired(boolean). Approximate the
+        // required-ness by setting the lower bound on the base end.
+        baseEnd.setLower(required ? 1 : 0);
+        baseEnd.setUpper(1);
+        baseEnd.setAggregation(AggregationKind.NONE_LITERAL);
+        baseEnd.setAssociation(ext);
+
+        // Stereotype end (ExtensionEnd, composite)
+        ExtensionEnd stereoEnd = UMLFactory.eINSTANCE.createExtensionEnd();
+        stereoEnd.setName(st.getName());
+        stereoEnd.setType(st);
+        stereoEnd.setLower(0);
+        stereoEnd.setUpper(1);
+        stereoEnd.setAggregation(AggregationKind.COMPOSITE_LITERAL);
+        stereoEnd.setAssociation(ext);
+
+        ext.getOwnedEnds().add(baseEnd);
+        ext.getOwnedEnds().add(stereoEnd);
+        // memberEnd is a superset/derived view; ownedEnd is the safe containment.
+        // Adding to memberEnds is not required and can cause EMF subset/superset issues
+        // depending on UML2 version, so we avoid it.
+
+        // Ensure the extension is contained in the profile so it serializes.
+        profile.getPackagedElements().add(ext);
+        return ext;
+    }
+
     // --- helpers ---
 
     private void indexExistingStereotypes(Profile profile) {
@@ -174,6 +297,298 @@ public final class JavaAnnotationProfileBuilder {
         return pt;
     }
 
+    private static org.eclipse.uml2.uml.Class ensureMetaclassReference(Profile profile, String metaclassName) {
+        // UML2 3.1 is strict: the metaclass passed to Stereotype#createExtension(...) must be a metaclass
+        // that the Profile references (via metaclassReference) AND the Profile must reference the UML metamodel
+        // (via metamodelReference). If these references are missing, createExtension throws IllegalArgumentException.
+        ResourceSet rs = ensureResourceSetFor(profile);
+
+        // Load UML metamodel into the SAME ResourceSet as the Profile/Model.
+        // Always start from the metaclass instance loaded from the UML metamodel resource.
+        // In UML2 3.1, Profile#createMetaclassReference(...) and Stereotype#createExtension(...) are
+        // very strict about identity and expect the metaclass to come from the referenced metamodel.
+        PackageableElement rawPe = UmlMetamodelCache.getMetaclass(rs, metaclassName);
+        if (rawPe == null) {
+            throw new IllegalStateException("Unable to locate UML metaclass '" + metaclassName + "'.");
+        }
+        if (!(rawPe instanceof org.eclipse.uml2.uml.Class)) {
+            throw new IllegalStateException("UML metaclass '" + metaclassName + "' is not a UML Class element: " + rawPe.getClass().getName());
+        }
+        org.eclipse.uml2.uml.Class rawMetaclass = (org.eclipse.uml2.uml.Class) rawPe;
+
+        org.eclipse.uml2.uml.Package rawPkg = rawMetaclass.getNearestPackage();
+        if (rawPkg == null) {
+            rawPkg = (org.eclipse.uml2.uml.Package) UmlMetamodelCache.getUmlMetamodel(rs);
+        }
+
+        // Ensure the profile references the metamodel package that owns this metaclass.
+        ensureMetamodelReference(profile, rawPkg);
+
+        // Use the raw metaclass instance from the metamodel for the metaclass reference creation.
+        // After defining the profile, we'll resolve the "referenced metaclass" instance and use that.
+        org.eclipse.uml2.uml.Class metaclass = rawMetaclass;
+
+        // Ensure a metaclass reference import exists.
+        ElementImport ei = findMetaclassImport(profile, metaclassName);
+        if (ei == null) {
+            try {
+                // Return type differs across UML2 versions; in UML2 3.1 it is typically ElementImport.
+                Object created = profile.createMetaclassReference(metaclass);
+                if (created instanceof ElementImport) {
+                    ei = (ElementImport) created;
+                }
+            } catch (Throwable t) {
+                throw new IllegalStateException("Failed to create metaclass reference for '" + metaclassName + "'.", t);
+            }
+        }
+        if (ei == null) {
+            // As a fallback, try to find it again (some UML2 versions don't return it directly).
+            ei = findMetaclassImport(profile, metaclassName);
+        }
+        if (ei != null) {
+            annotateIdIfMissing(ei, "MetaclassRefImport:" + metaclassName);
+        }
+
+        // UML2 3.1 is picky: createExtension(...) will only accept a metaclass that the Profile considers
+        // a "referenced metaclass". That list is reliably populated once the Profile is defined.
+        // Defining more than once is fine; define() is idempotent in UML2.
+        ensureProfileDefined(profile);
+
+        org.eclipse.uml2.uml.Class referenced = tryGetReferencedMetaclass(profile, metaclassName);
+        if (referenced != null) {
+            annotateIdIfMissing(referenced, "Metaclass:" + metaclassName);
+            return referenced;
+        }
+
+        // If the referenced list is not available, fall back to the imported element from the metaclass reference.
+        if (ei != null && ei.getImportedElement() instanceof org.eclipse.uml2.uml.Class c) {
+            annotateIdIfMissing(c, "Metaclass:" + metaclassName);
+            return c;
+        }
+
+        // Last resort: return the raw metaclass.
+        annotateIdIfMissing(metaclass, "Metaclass:" + metaclassName);
+        return metaclass;
+    }
+
+    private static void ensureProfileDefined(Profile profile) {
+        try {
+            java.lang.reflect.Method isDefined = profile.getClass().getMethod("isDefined");
+            Object r = isDefined.invoke(profile);
+            boolean defined = (r instanceof Boolean b) ? b : false;
+            if (!defined) {
+                java.lang.reflect.Method define = profile.getClass().getMethod("define");
+                define.invoke(profile);
+            }
+        } catch (NoSuchMethodException nsme) {
+            // Older/newer variants may not expose isDefined/define the same way.
+        } catch (Throwable t) {
+            // If define fails, extension creation will not work. Surface the root cause.
+            throw new IllegalStateException("Profile.define() failed; cannot create metaclass extensions.", t);
+        }
+    }
+
+    private static ElementImport findMetaclassImport(Profile profile, String metaclassName) {
+        try {
+            for (ElementImport ei : profile.getMetaclassReferences()) {
+                if (ei == null) continue;
+                if (ei.getImportedElement() instanceof org.eclipse.uml2.uml.Class c && metaclassName.equals(c.getName())) {
+                    return ei;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static PackageImport ensureMetamodelReference(Profile profile, org.eclipse.uml2.uml.Package umlMetamodel) {
+        if (umlMetamodel == null) return null;
+        // In UML2 3.1 the feature is metamodelReference : PackageImport[*].
+        try {
+            java.lang.reflect.Method getRefs = profile.getClass().getMethod("getMetamodelReferences");
+            Object r = getRefs.invoke(profile);
+            if (r instanceof java.util.List<?> list) {
+                for (Object o : list) {
+                    if (o instanceof org.eclipse.uml2.uml.PackageImport pi) {
+                        if (pi.getImportedPackage() == umlMetamodel) return pi;
+                        if (pi.getImportedPackage() != null && pi.getImportedPackage().eResource() != null && umlMetamodel.eResource() != null) {
+                            if (Objects.equals(pi.getImportedPackage().eResource().getURI(), umlMetamodel.eResource().getURI())) return pi;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            java.lang.reflect.Method create = profile.getClass().getMethod("createMetamodelReference", org.eclipse.uml2.uml.Package.class);
+            Object created = create.invoke(profile, umlMetamodel);
+            if (created instanceof PackageImport pi) {
+                annotateIdIfMissing(pi, "MetamodelRef:" + (umlMetamodel.getName() == null ? "UML" : umlMetamodel.getName()));
+                return pi;
+            } else if (created instanceof org.eclipse.uml2.uml.Element e) {
+                annotateIdIfMissing(e, "MetamodelRef:" + (umlMetamodel.getName() == null ? "UML" : umlMetamodel.getName()));
+            }
+        } catch (Throwable ignored) {
+            // Some UML2 variants may not require this, but UML2 3.1 does; if missing, extension creation will fail.
+        }
+
+        // Try once more to find the import we just created
+        try {
+            java.lang.reflect.Method getRefs = profile.getClass().getMethod("getMetamodelReferences");
+            Object r = getRefs.invoke(profile);
+            if (r instanceof java.util.List<?> list) {
+                for (Object o : list) {
+                    if (o instanceof PackageImport pi) {
+                        if (pi.getImportedPackage() == umlMetamodel) return pi;
+                        if (pi.getImportedPackage() != null && pi.getImportedPackage().eResource() != null && umlMetamodel.eResource() != null) {
+                            if (Objects.equals(pi.getImportedPackage().eResource().getURI(), umlMetamodel.eResource().getURI())) return pi;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        return null;
+    }
+
+    private static org.eclipse.uml2.uml.Class tryGetReferencedMetaclass(Profile profile, String metaclassName) {
+        try {
+            java.lang.reflect.Method m = profile.getClass().getMethod("getReferencedMetaclasses");
+            Object r = m.invoke(profile);
+            if (r instanceof java.util.List<?> list) {
+                for (Object o : list) {
+                    if (o instanceof org.eclipse.uml2.uml.Class c && metaclassName.equals(c.getName())) {
+                        return c;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static ResourceSet ensureResourceSetFor(Element element) {
+        // Ensure the root Model is attached to a ResourceSet; profile/metaclass imports rely on this.
+        Model m = (element instanceof Model) ? (Model) element : element.getModel();
+        if (m != null && m.eResource() != null && m.eResource().getResourceSet() != null) {
+            ResourceSet rs = m.eResource().getResourceSet();
+            registerUmlResourceInfrastructure(rs);
+            return rs;
+        }
+
+        ResourceSet rs = new ResourceSetImpl();
+        registerUmlResourceInfrastructure(rs);
+        Resource r = new XMIResourceImpl(URI.createURI("urn:java-to-xmi:model.uml"));
+        rs.getResources().add(r);
+        if (m != null) {
+            r.getContents().add(m);
+        }
+        return rs;
+    }
+
+    private static void registerUmlResourceInfrastructure(ResourceSet rs) {
+        // Basic registrations so UML resources can be parsed/serialized
+        rs.getResourceFactoryRegistry().getExtensionToFactoryMap().put(UMLResource.FILE_EXTENSION, UMLResource.Factory.INSTANCE);
+        rs.getPackageRegistry().put(UMLPackage.eNS_URI, UMLPackage.eINSTANCE);
+
+        // If the optional "uml.resources" bundle is on the classpath (it is in our Maven setup),
+        // initialize PATHMAP URI mappings so that UMLResource.UML_METAMODEL_URI can be resolved.
+        // Use reflection so we don't hard-require the class at compile time across UML2 variants.
+        try {
+            Class<?> util = Class.forName("org.eclipse.uml2.uml.resources.util.UMLResourcesUtil");
+            java.lang.reflect.Method init = util.getMethod("init", ResourceSet.class);
+            init.invoke(null, rs);
+        } catch (Throwable ignored) {
+            // Safe to ignore: we'll fall back to direct URI loads and/or already-configured mappings.
+        }
+    }
+
+    private static final class UmlMetamodelCache {
+        private static final WeakHashMap<ResourceSet, Model> byResourceSet = new WeakHashMap<>();
+
+        static Model getUmlMetamodel(ResourceSet rs) {
+            synchronized (byResourceSet) {
+                Model cached = byResourceSet.get(rs);
+                if (cached != null) return cached;
+
+                registerUmlResourceInfrastructure(rs);
+                Resource r = tryLoadUmlMetamodel(rs);
+                if (r == null || r.getContents().isEmpty()) {
+                    throw new IllegalStateException("Failed to load UML metamodel resource.");
+                }
+
+                Object root = EcoreUtil.getObjectByType(r.getContents(), UMLPackage.Literals.MODEL);
+                final Model m;
+                if (root instanceof Model) {
+                    m = (Model) root;
+                } else {
+                    Object first = r.getContents().get(0);
+                    if (first instanceof Model) {
+                        m = (Model) first;
+                    } else {
+                        throw new IllegalStateException("Unexpected UML metamodel root type: " + (first == null ? "null" : first.getClass().getName()));
+                    }
+                }
+                byResourceSet.put(rs, m);
+                return m;
+            }
+        }
+
+        private static Resource tryLoadUmlMetamodel(ResourceSet rs) {
+            // With org.eclipse.uml2.uml.resources on the classpath, the PATHMAP URI should work.
+            try {
+                return rs.getResource(URI.createURI(UMLResource.UML_METAMODEL_URI), true);
+            } catch (Throwable ignored) {
+                // Fall back to loading the resource directly from the classpath.
+                // Verified for this project:
+                //   org.eclipse.uml2.uml.resources contains: metamodels/UML.metamodel.uml
+                try {
+                    ClassLoader cl = JavaAnnotationProfileBuilder.class.getClassLoader();
+                    String[] candidates = new String[] {"metamodels/UML.metamodel.uml", "UML.metamodel.uml"};
+                    for (String p : candidates) {
+                        java.net.URL url = cl.getResource(p);
+                        if (url == null) continue;
+                        // EMF can load from jar:file:... URLs via URI.
+                        URI uri = URI.createURI(url.toString());
+                        return rs.getResource(uri, true);
+                    }
+                } catch (Throwable ignored2) {
+                    // ignore
+                }
+                return null;
+            }
+        }
+
+        static PackageableElement getMetaclass(ResourceSet rs, String metaclassName) {
+            Model m = getUmlMetamodel(rs);
+            // Quick scan
+            for (PackageableElement pe : m.getPackagedElements()) {
+                if (metaclassName.equals(pe.getName())) return pe;
+            }
+            // Deep scan
+            for (PackageableElement pe : m.getPackagedElements()) {
+                if (pe instanceof org.eclipse.uml2.uml.Package p) {
+                    PackageableElement found = deepFind(p, metaclassName);
+                    if (found != null) return found;
+                }
+            }
+            return null;
+        }
+
+        private static PackageableElement deepFind(org.eclipse.uml2.uml.Package pkg, String name) {
+            for (PackageableElement pe : pkg.getPackagedElements()) {
+                if (name.equals(pe.getName())) return pe;
+                if (pe instanceof org.eclipse.uml2.uml.Package p2) {
+                    PackageableElement r = deepFind(p2, name);
+                    if (r != null) return r;
+                }
+            }
+            for (org.eclipse.uml2.uml.Package p : pkg.getNestedPackages()) {
+                PackageableElement r = deepFind(p, name);
+                if (r != null) return r;
+            }
+            return null;
+        }
+
+    }
     private static void setQualifiedNameMeta(Stereotype st, String qualifiedName) {
         EAnnotation ann = st.getEAnnotation(JAVA_ANN_SOURCE);
         if (ann == null) ann = st.createEAnnotation(JAVA_ANN_SOURCE);
@@ -217,5 +632,54 @@ public final class JavaAnnotationProfileBuilder {
             out = "_" + out;
         }
         return out;
+    }
+    /**
+     * Find an already-existing Extension between the given stereotype and metaclass.
+     *
+     * Needed because UML2 3.1 can fail to expose manually-created extensions via
+     * Stereotype#getExtensions until the profile is defined/serialized.
+     */
+    private static Extension findExistingExtension(Profile profile, Stereotype st, org.eclipse.uml2.uml.Class metaclass) {
+        if (profile == null || st == null || metaclass == null) return null;
+
+        // 1) Scan profile packaged elements (works for both native and manual extensions)
+        for (org.eclipse.uml2.uml.PackageableElement pe : profile.getPackagedElements()) {
+            if (!(pe instanceof Extension)) continue;
+            Extension ext = (Extension) pe;
+            if (extensionMatches(ext, st, metaclass)) return ext;
+        }
+
+        // 2) Fallback: scan stereotype extensions (may be empty/derived in some UML2 setups)
+        for (Extension ext : st.getExtensions()) {
+            if (ext == null) continue;
+            if (extensionMatches(ext, st, metaclass)) return ext;
+        }
+        return null;
+    }
+
+    private static boolean extensionMatches(Extension ext, Stereotype st, org.eclipse.uml2.uml.Class metaclass) {
+        if (ext == null) return false;
+        boolean hasStereoEnd = false;
+        boolean hasMetaEnd = false;
+
+        for (Property p : ext.getOwnedEnds()) {
+            if (p == null || p.getType() == null) continue;
+            if (p.getType() == st) hasStereoEnd = true;
+            if (p.getType() == metaclass) hasMetaEnd = true;
+        }
+
+        // In some cases the metaclass instance differs but name matches (e.g. different metamodel instance).
+        // Accept name match only if metaclass instance match wasn't found.
+        if (!hasMetaEnd && metaclass.getName() != null) {
+            for (Property p : ext.getOwnedEnds()) {
+                if (p == null || p.getType() == null) continue;
+                if (metaclass.getName().equals(p.getType().getName())) {
+                    hasMetaEnd = true;
+                    break;
+                }
+            }
+        }
+
+        return hasStereoEnd && hasMetaEnd;
     }
 }
