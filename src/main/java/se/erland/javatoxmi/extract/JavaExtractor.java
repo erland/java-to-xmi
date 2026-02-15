@@ -219,6 +219,7 @@ public final class JavaExtractor {
                 isFinal,
                 extendsType,
                 implementsTypes,
+                null,
                 fields,
                 methods,
                 enumLiterals

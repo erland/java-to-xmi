@@ -30,6 +30,9 @@ public final class JType {
     /** Qualified names if resolvable within project, otherwise original strings. */
     public final List<String> implementsTypes;
 
+    /** Type-level annotation usages (e.g. {@code @Entity}, {@code @Table(name="x")}). */
+    public final List<JAnnotationUse> annotations;
+
     public final List<JField> fields;
     public final List<JMethod> methods;
 
@@ -47,6 +50,7 @@ public final class JType {
                  boolean isFinal,
                  String extendsType,
                  List<String> implementsTypes,
+                 List<JAnnotationUse> annotations,
                  List<JField> fields,
                  List<JMethod> methods,
                  List<String> enumLiterals) {
@@ -63,6 +67,7 @@ public final class JType {
 
         this.extendsType = extendsType;
         this.implementsTypes = implementsTypes == null ? new ArrayList<>() : new ArrayList<>(implementsTypes);
+        this.annotations = annotations == null ? new ArrayList<>() : new ArrayList<>(annotations);
         this.fields = fields == null ? new ArrayList<>() : new ArrayList<>(fields);
         this.methods = methods == null ? new ArrayList<>() : new ArrayList<>(methods);
         this.enumLiterals = enumLiterals == null ? new ArrayList<>() : new ArrayList<>(enumLiterals);
