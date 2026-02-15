@@ -8,6 +8,7 @@ import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.type.*;
+import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.nodeTypes.NodeWithModifiers;
 import se.erland.javatoxmi.model.*;
@@ -156,6 +157,8 @@ public final class JavaExtractor {
             qn = qualifiedName(pkg, name);
         }
 
+
+        List<JAnnotationUse> annotations = extractTypeAnnotations(td, ctx);
                 String extendsType = null;
                 List<String> implementsTypes = new ArrayList<>();
 
@@ -219,7 +222,7 @@ public final class JavaExtractor {
                 isFinal,
                 extendsType,
                 implementsTypes,
-                null,
+                annotations,
                 fields,
                 methods,
                 enumLiterals
@@ -400,6 +403,70 @@ public final class JavaExtractor {
         return null;
     }
 
+    private static List<JAnnotationUse> extractTypeAnnotations(TypeDeclaration<?> td, ImportContext ctx) {
+        if (td == null) return List.of();
+        try {
+            NodeList<AnnotationExpr> anns = td.getAnnotations();
+            if (anns == null || anns.isEmpty()) return List.of();
+            List<JAnnotationUse> out = new ArrayList<>();
+            for (AnnotationExpr ae : anns) {
+                if (ae == null) continue;
+                String rawName = ae.getNameAsString();
+                String simple = rawName;
+                String qualified = null;
+
+                if (rawName != null && rawName.contains(".")) {
+                    int dot = rawName.lastIndexOf('.');
+                    simple = rawName.substring(dot + 1);
+                    qualified = rawName;
+                } else if (rawName != null && !rawName.isBlank()) {
+                    qualified = ctx.qualifyAnnotation(rawName);
+                }
+
+                Map<String, String> values = new LinkedHashMap<>();
+                if (ae instanceof NormalAnnotationExpr) {
+                    NormalAnnotationExpr nae = (NormalAnnotationExpr) ae;
+                    for (MemberValuePair p : nae.getPairs()) {
+                        if (p == null) continue;
+                        String k = p.getNameAsString();
+                        String v = normalizeAnnotationValue(p.getValue());
+                        if (k != null && !k.isBlank()) values.put(k, v);
+                    }
+                } else if (ae instanceof SingleMemberAnnotationExpr) {
+                    SingleMemberAnnotationExpr sae = (SingleMemberAnnotationExpr) ae;
+                    values.put("value", normalizeAnnotationValue(sae.getMemberValue()));
+                } else {
+                    // MarkerAnnotationExpr -> no values
+                }
+
+                out.add(new JAnnotationUse(simple, qualified, values));
+            }
+            return out;
+        } catch (Exception e) {
+            // Best-effort: annotations should never break extraction.
+            return List.of();
+        }
+    }
+
+    private static String normalizeAnnotationValue(Expression expr) {
+        if (expr == null) return "";
+        try {
+            if (expr.isStringLiteralExpr()) return expr.asStringLiteralExpr().asString();
+            if (expr.isCharLiteralExpr()) return Character.toString(expr.asCharLiteralExpr().asChar());
+            if (expr.isBooleanLiteralExpr()) return Boolean.toString(expr.asBooleanLiteralExpr().getValue());
+            if (expr.isIntegerLiteralExpr()) return expr.asIntegerLiteralExpr().getValue();
+            if (expr.isLongLiteralExpr()) return expr.asLongLiteralExpr().getValue();
+            if (expr.isDoubleLiteralExpr()) return expr.asDoubleLiteralExpr().getValue();
+            if (expr.isNullLiteralExpr()) return "null";
+            if (expr.isClassExpr()) return expr.asClassExpr().getType().toString() + ".class";
+            if (expr.isNameExpr()) return expr.asNameExpr().getNameAsString();
+            if (expr.isFieldAccessExpr()) return expr.asFieldAccessExpr().toString();
+            return expr.toString();
+        } catch (Exception e) {
+            return expr.toString();
+        }
+    }
+
     private static String renderType(Type t) {
         if (t == null) return "java.lang.Object";
         if (t instanceof VoidType) return "void";
@@ -462,6 +529,16 @@ private static JVisibility visibilityOf(NodeWithModifiers<?> node) {
         final Map<String, String> explicitImportsBySimple = new HashMap<>();
         final List<String> wildcardImports = new ArrayList<>();
 
+        // java.lang contains a small set of commonly used annotations that are implicitly available
+        // without imports. We treat these as a best-effort qualification target for annotation names.
+        private static final Set<String> JAVA_LANG_ANNOTATIONS = Set.of(
+                "Deprecated",
+                "Override",
+                "SuppressWarnings",
+                "SafeVarargs",
+                "FunctionalInterface"
+        );
+
         private ImportContext(String currentPackage, Set<String> projectQualifiedTypes) {
             this.currentPackage = currentPackage == null ? "" : currentPackage;
             this.projectQualifiedTypes = projectQualifiedTypes;
@@ -481,6 +558,10 @@ private static JVisibility visibilityOf(NodeWithModifiers<?> node) {
                 }
             }
             return ctx;
+        }
+
+        private static boolean isJavaLangAnnotation(String simpleName) {
+            return simpleName != null && JAVA_LANG_ANNOTATIONS.contains(simpleName);
         }
 
         String resolve(String typeName) {
@@ -510,6 +591,31 @@ private static JVisibility visibilityOf(NodeWithModifiers<?> node) {
             }
             return null;
         }
+        /**
+         * Try to qualify an annotation name using the compilation unit's imports and current package.
+         * This is a best-effort heuristic; it does not require the annotation type to be part of the project source set.
+         */
+        String qualifyAnnotation(String simpleName) {
+            if (simpleName == null || simpleName.isBlank()) return null;
+            if (simpleName.contains(".")) return simpleName;
+
+            // explicit import (even if not in project types)
+            String exp = explicitImportsBySimple.get(simpleName);
+            if (exp != null) return exp;
+
+            if (isJavaLangAnnotation(simpleName)) return "java.lang." + simpleName;
+
+            // same package
+            if (!currentPackage.isBlank()) return currentPackage + "." + simpleName;
+
+            // wildcard imports: choose the first as a heuristic
+            if (!wildcardImports.isEmpty()) return wildcardImports.get(0) + "." + simpleName;
+
+            // java.lang as a last resort
+            return "java.lang." + simpleName;
+        }
+
+
 
 /**
  * Try to qualify a non-project type name using imports/wildcards/java.lang.
