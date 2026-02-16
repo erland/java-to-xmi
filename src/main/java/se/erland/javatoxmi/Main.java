@@ -154,15 +154,20 @@ public final class Main {
             System.err.println("See report: " + reportOut);
             System.exit(3);
             return;
-        }System.out.println("java-to-xmi\n" +
+        }
+
+        System.out.println(
+                "java-to-xmi\n" +
                 "- Source: " + sourcePath + "\n" +
                 "- XMI: " + xmiOut + "\n" +
                 "- Report: " + reportOut + "\n" +
                 "- Java files: " + javaFiles.size() + "\n" +
                 "- Types: " + jModel.types.size() + "\n" +
-                "- External refs: " + jModel.externalTypeRefs.size() + "\n" +
-                "- Unresolved (unknown): " + jModel.unresolvedTypes.size());
-System.exit(0);
+                "- Parse errors: " + jModel.parseErrors.size() + "\n" +
+                "- External refs (stubbed): " + jModel.externalTypeRefs.size() + "\n" +
+                "- Unresolved (unknown): " + jModel.unresolvedTypes.size()
+        );
+        System.exit(0);
     }
 
     private static Path resolveXmiOutput(String outputArg, Path sourcePath) {
@@ -182,8 +187,7 @@ System.exit(0);
         return xmiOut.getParent().resolve("report.md");
     }
 
-    /** Minimal CLI argument parsing without external d
- without external dependencies (Step 1/2). */
+    /** Minimal CLI argument parsing without external dependencies. */
     static final class CliArgs {
         boolean help = false;
         String source;
