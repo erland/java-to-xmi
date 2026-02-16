@@ -74,6 +74,16 @@ public final class UmlBuilder {
     }
 
     public Result build(JModel jModel, String modelName) {
+        return build(jModel, modelName, true);
+    }
+
+    /**
+     * Build UML model.
+     *
+     * @param includeStereotypes when false, skips building the JavaAnnotations profile and avoids
+     *                           stereotype-related output (backwards-compat mode).
+     */
+    public Result build(JModel jModel, String modelName, boolean includeStereotypes) {
         Objects.requireNonNull(jModel, "jModel");
         if (modelName == null || modelName.isBlank()) modelName = "JavaModel";
 
@@ -137,7 +147,7 @@ public final class UmlBuilder {
                 break;
             }
         }
-        if (hasAnyAnnotations) {
+        if (includeStereotypes && hasAnyAnnotations) {
             applyJavaAnnotationProfile(model, types);
         }
 

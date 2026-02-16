@@ -29,6 +29,8 @@ Create a command-line tool that converts a **Java source code tree** into a **UM
 - `--fail-on-unresolved <true|false>`: Exit non-zero if unresolved types remain. Default: `false`
 - `--report <path>`: Write a markdown report. Default: `./output/report.md`
 - `--format <xmi>`: Placeholder for future formats; v1 supports `xmi`.
+- `--no-stereotypes`: Backwards compatibility mode. Skip building the JavaAnnotations profile and
+  do not emit stereotype applications in the exported XMI.
 
 ## 4. Outputs
 ### 4.1 Primary output
@@ -91,10 +93,12 @@ Create a command-line tool that converts a **Java source code tree** into a **UM
 - Nested types are represented as nested classifiers in the owning classifier’s namespace, and/or using a nesting relationship depending on UML capabilities.
 
 #### 5.2.9 Annotations
-- Annotations may be captured as:
-  - documentation tags on elements, and/or
-  - a lightweight annotation catalog inside the model.
-- v1 should preserve annotation names and key-value pairs where practical.
+- Type-level Java annotations are represented as UML stereotypes.
+- The exporter creates a `JavaAnnotations` UML Profile inside the model and defines one stereotype per
+  discovered annotation type.
+- Stereotype applications are emitted using a deterministic `xmi:Extension` block (namespace prefix `j2x`).
+- Annotation element values are emitted as stereotype tag values (strings).
+- When `--no-stereotypes` is enabled, the profile and stereotype applications are not produced.
 
 #### 5.2.10 Generics
 - Generic type arguments are preserved as:

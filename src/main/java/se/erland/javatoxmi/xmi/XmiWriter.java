@@ -105,8 +105,9 @@ public final class XmiWriter {
     private static String ensureXmiWrapper(String xml) {
         String trimmed = xml.trim();
         if (trimmed.startsWith("<xmi:XMI") || trimmed.contains("<xmi:XMI")) {
-            // Ensure our namespace is available (idempotent insertion).
-            return ensureNamespaceOnRoot(xml, "j2x", StereotypeXmiInjector.J2X_NS);
+            // Already wrapped. Do not force-add any extra namespaces here; the stereotype injector
+            // will add the j2x namespace only when it actually injects stereotype applications.
+            return xml;
         }
 
         // Strip XML declaration if present
@@ -122,7 +123,7 @@ public final class XmiWriter {
         wrapped.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         wrapped.append("<xmi:XMI xmi:version=\"2.1\" xmlns:xmi=\"http://schema.omg.org/spec/XMI/2.1\" ");
         wrapped.append("xmlns:uml=\"http://www.eclipse.org/uml2/3.0.0/UML\" ");
-        wrapped.append("xmlns:j2x=\"").append(StereotypeXmiInjector.J2X_NS).append("\">\n");
+        wrapped.append(">\n");
         // indent inner document for readability
         for (String line : inner.split("\\R", -1)) {
             if (line.isEmpty()) continue;
@@ -130,20 +131,6 @@ public final class XmiWriter {
         }
         wrapped.append("</xmi:XMI>\n");
         return wrapped.toString();
-    }
-
-    private static String ensureNamespaceOnRoot(String xml, String prefix, String ns) {
-        String needle = "xmlns:" + prefix + "=\"";
-        if (xml.contains(needle)) return xml;
-
-        int start = xml.indexOf("<xmi:XMI");
-        if (start < 0) return xml;
-        int end = xml.indexOf('>', start);
-        if (end < 0) return xml;
-
-        String before = xml.substring(0, end);
-        String after = xml.substring(end);
-        return before + " xmlns:" + prefix + "=\"" + ns + "\"" + after;
     }
 
 

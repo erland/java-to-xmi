@@ -109,7 +109,7 @@ public final class Main {
         // Step 4: build UML object graph
         final UmlBuilder.Result umlResult;
         try {
-            umlResult = new UmlBuilder().build(jModel, modelName);
+            umlResult = new UmlBuilder().build(jModel, modelName, !parsed.noStereotypes);
         } catch (RuntimeException ex) {
             System.err.println("Error: UML build failed.");
             System.err.println(ex.getMessage());
@@ -119,7 +119,11 @@ public final class Main {
 
         // Step 5: XMI export
         try {
-            XmiWriter.write(umlResult.umlModel, jModel, xmiOut);
+            if (parsed.noStereotypes) {
+                XmiWriter.write(umlResult.umlModel, xmiOut);
+            } else {
+                XmiWriter.write(umlResult.umlModel, jModel, xmiOut);
+            }
         } catch (IOException e) {
             System.err.println("Error: could not write XMI to: " + xmiOut);
             System.err.println(e.getMessage());
@@ -198,6 +202,9 @@ public final class Main {
         String report;
         boolean failOnUnresolved = false;
 
+        // Step 9: backwards compatibility
+        boolean noStereotypes = false;
+
         // Step 2 flags
         boolean includeTests = false;
         final List<String> excludes = new ArrayList<>();
@@ -240,6 +247,9 @@ public final class Main {
                         break;
                     case "--include-tests":
                         out.includeTests = true;
+                        break;
+                    case "--no-stereotypes":
+                        out.noStereotypes = true;
                         break;
                     default:
                         if (a.startsWith("--")) {
@@ -290,6 +300,8 @@ public final class Main {
                     "                         against paths *relative to --source* using '/' separators.\n" +
                     "                         Also supports --exclude=<glob>.\n" +
                     "  --include-tests        Include common test folders (default: excluded)\n" +
+                    "  --no-stereotypes       Backwards-compatibility: skip building the JavaAnnotations\n" +
+                    "                         profile and do not emit stereotype applications.\n" +
                     "  -h, --help             Show help\n" +
                     "\n" +
                     "Examples:\n" +

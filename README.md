@@ -1,8 +1,9 @@
 # java-to-xmi
 
-A CLI tool that will convert Java source code into **UML XMI**.
+Convert a Java source tree into a UML model and export it as **XMI**.
 
-This repository currently contains **Step 1 (scaffold)**: a Maven build that produces a runnable fat-jar and a minimal CLI entrypoint.
+This project is optimized for importing into your React modeller PWA, while keeping the output
+reasonably compatible with UML tools.
 
 ## Build
 
@@ -14,7 +15,7 @@ Requirements:
 mvn -B test package
 ```
 
-This produces:
+Produces:
 - `target/java-to-xmi.jar` (fat jar)
 
 ## Run
@@ -29,34 +30,32 @@ Run on the included sample project:
 java -jar target/java-to-xmi.jar --source samples/mini --output out
 ```
 
-Outputs (Step 1 placeholders):
+Outputs:
 - `out/model.xmi`
 - `out/report.md`
 
-## Notes
+## Stereotypes / annotations
 
-- Real parsing/extraction and UML/XMI export will be implemented in later steps.
-- The CLI is intentionally dependency-free in Step 1; we can switch to `picocli` later if you prefer.
+Type-level Java annotations are represented as:
 
+1) A UML Profile named `JavaAnnotations` embedded in the XMI
+2) Stereotype applications emitted in an `xmi:Extension` block (namespace `j2x`)
 
-## Step 2: Source scanning options
+This avoids relying on UML2's runtime stereotype application APIs, while keeping the output deterministic.
 
-- `--exclude <glob>` (repeatable) to ignore paths relative to `--source`.
-- `--include-tests` to include `src/test` and other common test folders.
-
-## Download & run
-
-### From GitHub Actions artifacts (every push/PR)
-1. Open the latest **Build** workflow run.
-2. Download the `java-to-xmi-jar` artifact.
-3. Run:
-   ```bash
-   java -jar java-to-xmi-*.jar --help
-   ```
-
-### From GitHub Releases (tags)
-If you create a tag like `v0.1.0`, the **Release** workflow will publish a GitHub Release containing the runnable jar.
+If you want legacy output without any annotation profile or stereotype applications, use:
 
 ```bash
-java -jar java-to-xmi-*.jar --source ./my-project --output ./out/model.xmi --report ./out/report.md
+java -jar target/java-to-xmi.jar --source ... --no-stereotypes
 ```
+
+## Key CLI options
+
+- `--exclude <glob>` (repeatable) exclude paths relative to `--source`
+- `--include-tests` include common test folders
+- `--fail-on-unresolved <true|false>` exit with code 3 if unknown types remain
+- `--no-stereotypes` skip the JavaAnnotations profile + stereotype output
+
+More details:
+- `docs/functional-specification.md`
+- `docs/backwards-compatibility.md`
