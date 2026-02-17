@@ -16,18 +16,23 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Step 5 (recommended approach) — Apply stereotypes by injecting deterministic XMI extensions.
+ * Step 5 (recommended approach) — Apply stereotypes by injecting deterministic, UML2-style
+ * stereotype applications into the serialized XMI.
  *
  * Why this exists:
  * Eclipse UML2's runtime APIs for Profile#define / applyProfile / applyStereotype are brittle
  * across versions and require strict metamodel identity. Instead of depending on those APIs,
- * we emit an XMI extension that records stereotype applications in a stable, tool-agnostic
- * format that is easy for our own importer (and other tooling, if desired).
+ * we post-process the saved XMI and inject:
+ *   1) a <profileApplication> under the root uml:Model
+ *   2) stereotype application instances as <JavaAnnotations:Stereo ... base_Class="..."/>
+ *
+ * This is closer to what many UML tools expect than custom xmi:Extension payloads, while
+ * remaining deterministic and independent of UML2 runtime behavior.
  */
 final class StereotypeXmiInjector {
 
-    static final String J2X_NS = "https://se.erland/javatoxmi/xmi/1.0";
-    static final String EXTENDER = "java-to-xmi";
+    /** Namespace URI for the generated EPackage that represents the profile in XMI. */
+    static final String PROFILE_ECORE_NS = JavaAnnotationProfileBuilder.PROFILE_URI;
 
     private static final String ID_ANN_SOURCE = "java-to-xmi:id";
     private static final String ID_ANN_KEY = "id";
@@ -40,7 +45,7 @@ final class StereotypeXmiInjector {
         Profile profile = findJavaAnnotationsProfile(umlModel);
         if (profile == null) return xmiWrappedXml;
 
-        Map<String, String> stereotypeIdByQualifiedName = indexStereotypesByQualifiedName(profile);
+        Map<String, StereotypeInfo> stereotypeByQualifiedName = indexStereotypesByQualifiedName(profile);
 
         // Determinism: sort types + annotations + tags for stable injected output.
         List<JType> types = new ArrayList<>(jModel.types);
@@ -68,19 +73,21 @@ final class StereotypeXmiInjector {
                 String qn = ann.qualifiedName;
                 if (qn == null) qn = "";
 
-                String stereotypeId = stereotypeIdByQualifiedName.get(qn);
-                if (stereotypeId == null) {
+                StereotypeInfo stInfo = stereotypeByQualifiedName.get(qn);
+                if (stInfo == null) {
                     // Best effort: fall back to matching by simple name when qualification is missing.
-                    stereotypeId = stereotypeIdByQualifiedName.get("#" + (ann.simpleName == null ? "" : ann.simpleName));
+                    stInfo = stereotypeByQualifiedName.get("#" + (ann.simpleName == null ? "" : ann.simpleName));
                 }
-                if (stereotypeId == null) continue;
+                if (stInfo == null) continue;
 
                 String appId = "_" + UmlIdStrategy.id("StereotypeApplication:" + t.qualifiedName + "@" + (ann.qualifiedName != null ? ann.qualifiedName : ann.simpleName));
 
                 InjectedApplication ia = new InjectedApplication();
                 ia.xmiId = appId;
                 ia.baseId = baseId;
-                ia.stereotypeId = stereotypeId;
+                ia.stereotypeId = stInfo.id;
+                ia.stereotypeName = stInfo.name;
+                ia.baseProperty = basePropertyForType(t);
                 ia.stereotypeQualifiedName = ann.qualifiedName;
                 if (ann.values != null) {
                     ia.tags.putAll(ann.values);
@@ -91,7 +98,12 @@ final class StereotypeXmiInjector {
 
         if (apps.isEmpty()) return xmiWrappedXml;
 
+        // Ensure the profile Ecore namespace is declared for stereotype application element names.
+        xmiWrappedXml = ensureProfileNamespaceDeclared(xmiWrappedXml);
+
+        // Ensure the model has a profileApplication referencing the JavaAnnotations profile.
         String profileId = "_" + getAnnotatedIdOrDefault(profile, UmlIdStrategy.id("Profile:" + JavaAnnotationProfileBuilder.PROFILE_NAME));
+        xmiWrappedXml = ensureProfileApplicationPresent(xmiWrappedXml, profileId);
 
         apps.sort((a, b) -> {
             int c = nullSafe(a.baseId).compareTo(nullSafe(b.baseId));
@@ -103,9 +115,55 @@ final class StereotypeXmiInjector {
             return nullSafe(a.xmiId).compareTo(nullSafe(b.xmiId));
         });
 
-        String extensionXml = buildExtension(profileId, apps);
+        String appsXml = buildStereotypeApplications(apps);
+        return injectBeforeClosingXmi(xmiWrappedXml, appsXml);
+    }
 
-        return injectBeforeClosingXmi(xmiWrappedXml, extensionXml);
+    private static String ensureProfileNamespaceDeclared(String xml) {
+        if (xml == null) return null;
+        // We use the profile name as prefix, e.g. xmlns:JavaAnnotations="..."
+        String decl = "xmlns:" + JavaAnnotationProfileBuilder.PROFILE_NAME + "=\"" + PROFILE_ECORE_NS + "\"";
+        if (xml.contains(decl)) return xml;
+
+        int rootStart = xml.indexOf("<xmi:XMI");
+        if (rootStart >= 0) {
+            int gt = xml.indexOf('>', rootStart);
+            if (gt > rootStart) {
+                String before = xml.substring(0, gt);
+                String after = xml.substring(gt);
+                return before + " " + decl + after;
+            }
+        }
+
+        // Fallback: add to uml:Model if file doesn't have an xmi:XMI wrapper.
+        rootStart = xml.indexOf("<uml:Model");
+        if (rootStart >= 0) {
+            int gt = xml.indexOf('>', rootStart);
+            if (gt > rootStart) {
+                String before = xml.substring(0, gt);
+                String after = xml.substring(gt);
+                return before + " " + decl + after;
+            }
+        }
+        return xml;
+    }
+
+    private static String ensureProfileApplicationPresent(String xml, String profileId) {
+        if (xml == null) return null;
+        // If a profileApplication already exists, leave as-is.
+        if (xml.contains("<profileApplication") && xml.contains("<appliedProfile")) return xml;
+
+        int modelStart = xml.indexOf("<uml:Model");
+        if (modelStart < 0) return xml;
+        int modelGt = xml.indexOf('>', modelStart);
+        if (modelGt < 0) return xml;
+
+        String appId = "_" + UmlIdStrategy.id("ProfileApplication:" + profileId);
+        String pa = "\n  <profileApplication xmi:id=\"" + escapeAttr(appId) + "\">\n" +
+                "    <appliedProfile href=\"#" + escapeAttr(profileId) + "\"/>\n" +
+                "  </profileApplication>\n";
+
+        return xml.substring(0, modelGt + 1) + pa + xml.substring(modelGt + 1);
     }
 
     private static Profile findJavaAnnotationsProfile(Model model) {
@@ -117,26 +175,41 @@ final class StereotypeXmiInjector {
         return null;
     }
 
-    private static Map<String, String> indexStereotypesByQualifiedName(Profile profile) {
-        Map<String, String> out = new TreeMap<>();
+    private static Map<String, StereotypeInfo> indexStereotypesByQualifiedName(Profile profile) {
+        Map<String, StereotypeInfo> out = new TreeMap<>();
         for (Stereotype st : profile.getOwnedStereotypes()) {
             String id = "_" + getAnnotatedIdOrDefault(st, null);
             if (id == null) continue;
+            String name = st.getName() == null ? "" : st.getName();
+            StereotypeInfo info = new StereotypeInfo(id, name);
 
             // Primary key: qualified name from our meta annotation
             EAnnotation javaMeta = st.getEAnnotation(JavaAnnotationProfileBuilder.JAVA_ANN_SOURCE);
             if (javaMeta != null) {
                 String qn = javaMeta.getDetails().get("qualifiedName");
                 if (qn != null) {
-                    out.put(qn, id);
+                    out.put(qn, info);
                 }
             }
             // Secondary key: marker for unqualified + simple name
             if (st.getName() != null) {
-                out.put("#" + st.getName(), id);
+                out.put("#" + st.getName(), info);
             }
         }
         return out;
+    }
+
+    private static String basePropertyForType(JType t) {
+        // Map to UML metaclass extension property names.
+        if (t == null || t.kind == null) return "base_Class";
+        switch (t.kind) {
+            case INTERFACE:
+                return "base_Interface";
+            case ENUM:
+                return "base_Enumeration";
+            default:
+                return "base_Class";
+        }
     }
 
     private static String getAnnotatedIdOrDefault(org.eclipse.uml2.uml.Element el, String fallback) {
@@ -149,33 +222,26 @@ final class StereotypeXmiInjector {
         return fallback;
     }
 
-    private static String buildExtension(String profileId, List<InjectedApplication> apps) {
+    private static String buildStereotypeApplications(List<InjectedApplication> apps) {
         StringBuilder sb = new StringBuilder();
-        sb.append("  <xmi:Extension extender=\"").append(EXTENDER).append("\">\n");
-        sb.append("    <j2x:profileApplication profile=\"").append(escapeAttr(profileId)).append("\"/>\n");
-        sb.append("    <j2x:stereotypeApplications>\n");
         for (InjectedApplication a : apps) {
-            sb.append("      <j2x:apply xmi:id=\"").append(escapeAttr(a.xmiId)).append("\"");
-            sb.append(" base=\"").append(escapeAttr(a.baseId)).append("\"");
-            sb.append(" stereotype=\"").append(escapeAttr(a.stereotypeId)).append("\"");
-            if (a.stereotypeQualifiedName != null && !a.stereotypeQualifiedName.isBlank()) {
-                sb.append(" stereotypeQualifiedName=\"").append(escapeAttr(a.stereotypeQualifiedName)).append("\"");
-            }
-            sb.append(">\n");
+            // UML2-style stereotype application element.
+            sb.append("  <").append(JavaAnnotationProfileBuilder.PROFILE_NAME).append(":").append(escapeAttr(a.stereotypeName)).append(" xmi:id=\"")
+                    .append(escapeAttr(a.xmiId)).append("\"");
 
-            // Determinism: tags in key order.
+            sb.append(" ").append(escapeAttr(a.baseProperty)).append("=\"").append(escapeAttr(a.baseId)).append("\"");
+
+            // Determinism: tags emitted as attributes in key order.
             Map<String, String> tags = new TreeMap<>(a.tags);
             for (Map.Entry<String, String> e : tags.entrySet()) {
                 String k = e.getKey();
                 if (k == null || k.isBlank()) continue;
                 String v = e.getValue();
                 if (v == null) v = "";
-                sb.append("        <j2x:tag name=\"").append(escapeAttr(k)).append("\" value=\"").append(escapeAttr(v)).append("\"/>\n");
+                sb.append(" ").append(escapeAttr(k)).append("=\"").append(escapeAttr(v)).append("\"");
             }
-            sb.append("      </j2x:apply>\n");
+            sb.append("/>\n");
         }
-        sb.append("    </j2x:stereotypeApplications>\n");
-        sb.append("  </xmi:Extension>\n");
         return sb.toString();
     }
 
@@ -206,8 +272,19 @@ final class StereotypeXmiInjector {
         String xmiId;
         String baseId;
         String stereotypeId;
+        String stereotypeName;
+        String baseProperty;
         String stereotypeQualifiedName;
         final Map<String, String> tags = new TreeMap<>();
+    }
+
+    private static final class StereotypeInfo {
+        final String id;
+        final String name;
+        StereotypeInfo(String id, String name) {
+            this.id = id;
+            this.name = name;
+        }
     }
 
     private static String nullSafe(String s) {

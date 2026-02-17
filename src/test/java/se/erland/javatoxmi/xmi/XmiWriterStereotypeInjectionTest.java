@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class XmiWriterStereotypeInjectionTest {
 
     @Test
-    void injectsJavaAnnotationStereotypeApplicationsAsXmiExtension() throws Exception {
+    void injectsJavaAnnotationStereotypeApplicationsAsUml2ProfileAndApps() throws Exception {
         Path root = Files.createTempDirectory("java-to-xmi-xmi-ann");
         Path src = root.resolve("src/main/java/com/acme");
         Files.createDirectories(src);
@@ -41,17 +41,17 @@ public class XmiWriterStereotypeInjectionTest {
         XmiWriter.write(uml, jm, out);
 
         String xmi = Files.readString(out, StandardCharsets.UTF_8);
-        assertTrue(xmi.contains("<xmi:Extension extender=\"java-to-xmi\">"), "Expected an injected XMI extension");
-        assertTrue(xmi.contains("<j2x:stereotypeApplications>"), "Expected stereotypeApplications section");
+
+        // Profile application should be present under the model.
+        assertTrue(xmi.contains("<profileApplication"), "Expected a UML profileApplication");
+        assertTrue(xmi.contains("<appliedProfile href=\"#"), "Expected appliedProfile reference");
 
         String baseId = "_" + UmlIdStrategy.id("Classifier:com.acme.Person");
-        assertTrue(xmi.contains("base=\"" + baseId + "\""), "Expected base classifier id to be referenced");
 
-        // Stereotype ID is deterministic based on qualifiedName + stereotype name.
-        String stId = "_" + UmlIdStrategy.id("Stereotype:com.acme.Entity#Entity");
-        assertTrue(xmi.contains("stereotype=\"" + stId + "\""), "Expected stereotype id to be referenced");
-
-        // Tag value should be present.
-        assertTrue(xmi.contains("<j2x:tag name=\"value\" value=\"person\"/>"), "Expected annotation value tag");
+        // Stereotype application should be present in UML2-style form.
+        assertTrue(
+                xmi.contains(":Entity") && xmi.contains("base_Class=\"" + baseId + "\"") && xmi.contains("value=\"person\""),
+                "Expected a UML2-style stereotype application for @Entity with value=person"
+        );
     }
 }

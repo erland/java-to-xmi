@@ -40,10 +40,13 @@ public class StereotypeXmiInjectorTagOrderTest {
         XmiWriter.write(uml, jm, out);
         String xmi = Files.readString(out, StandardCharsets.UTF_8);
 
-        int idxA = xmi.indexOf("<j2x:tag name=\"a\"");
-        int idxB = xmi.indexOf("<j2x:tag name=\"b\"");
-        assertTrue(idxA >= 0, "Expected injected tag 'a' to be present");
-        assertTrue(idxB >= 0, "Expected injected tag 'b' to be present");
-        assertTrue(idxA < idxB, "Expected tags to be emitted in sorted order: a before b");
+        // Tags are emitted as attributes; ensure deterministic ordering a before b in the emitted element.
+        int el = xmi.indexOf(":Anno");
+        assertTrue(el >= 0, "Expected stereotype application element for Anno");
+        int idxA = xmi.indexOf(" a=\"1\"", el);
+        int idxB = xmi.indexOf(" b=\"2\"", el);
+        assertTrue(idxA >= 0, "Expected injected attribute 'a' to be present");
+        assertTrue(idxB >= 0, "Expected injected attribute 'b' to be present");
+        assertTrue(idxA < idxB, "Expected attributes to be emitted in sorted order: a before b");
     }
 }

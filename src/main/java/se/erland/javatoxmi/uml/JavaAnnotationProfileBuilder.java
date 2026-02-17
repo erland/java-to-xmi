@@ -290,17 +290,76 @@ public final class JavaAnnotationProfileBuilder {
 
     private static PrimitiveType ensureStringPrimitive(Profile profile) {
         // Many UML tools expect "String" as a primitive type.
-        for (org.eclipse.uml2.uml.Type t : profile.getOwnedTypes()) {
-            if (t instanceof PrimitiveType pt && "String".equals(pt.getName())) {
-                annotateIdIfMissing(pt, "Primitive:String");
-                return pt;
+        // IMPORTANT: UmlBuilder already creates a global PrimitiveType "String" in the model's
+        // "_primitives" package (deterministic id key "Primitive:String"). If we create another
+        // one inside the profile, we'd end up with duplicate xmi:id values in the same document.
+
+        // 1) Prefer an existing global "String" primitive anywhere in the enclosing UML Model.
+        // NOTE: Profile#getNearestPackage() will often return the profile itself (because Profile is a Package),
+        // so searching from there can miss the model's "_primitives" package and lead to duplicates.
+
+        org.eclipse.uml2.uml.Package searchRoot = profile.getModel();
+        if (searchRoot == null) {
+            // Fallback: walk up until we find a Model or top-level Package.
+            org.eclipse.emf.ecore.EObject cur = profile;
+            while (cur != null) {
+                if (cur instanceof org.eclipse.uml2.uml.Model m) {
+                    searchRoot = m;
+                    break;
+                }
+                if (cur instanceof org.eclipse.uml2.uml.Package p) {
+                    searchRoot = p;
+                }
+                cur = cur.eContainer();
             }
         }
+
+        if (searchRoot != null) {
+            PrimitiveType existing = findPrimitiveTypeByName(searchRoot, "String");
+            if (existing != null) {
+                annotateIdIfMissing(existing, "Primitive:String");
+                return existing;
+            }
+        }
+
+        // 2) As a last resort, create the primitive in the model-level "_primitives" package (NOT inside the profile).
+        org.eclipse.uml2.uml.Package owner = searchRoot != null ? searchRoot : profile;
+        org.eclipse.uml2.uml.Package primitivesPkg = findOrCreateChildPackage(owner, "_primitives");
+
         PrimitiveType pt = UMLFactory.eINSTANCE.createPrimitiveType();
         pt.setName("String");
-        profile.getOwnedTypes().add(pt);
+        primitivesPkg.getPackagedElements().add(pt);
         annotateIdIfMissing(pt, "Primitive:String");
         return pt;
+    }
+
+    private static org.eclipse.uml2.uml.Package findOrCreateChildPackage(org.eclipse.uml2.uml.Package owner, String name) {
+        if (owner == null) return null;
+        for (PackageableElement pe : owner.getPackagedElements()) {
+            if (pe instanceof org.eclipse.uml2.uml.Package p && name.equals(p.getName())) {
+                return p;
+            }
+        }
+        org.eclipse.uml2.uml.Package p = UMLFactory.eINSTANCE.createPackage();
+        p.setName(name);
+        owner.getPackagedElements().add(p);
+        // best-effort deterministic id annotation
+        annotateIdIfMissing(p, "Package:" + name);
+        return p;
+    }
+
+    private static PrimitiveType findPrimitiveTypeByName(org.eclipse.uml2.uml.Package pkg, String name) {
+        if (pkg == null) return null;
+        for (PackageableElement pe : pkg.getPackagedElements()) {
+            if (pe instanceof PrimitiveType pt && name.equals(pt.getName())) {
+                return pt;
+            }
+            if (pe instanceof org.eclipse.uml2.uml.Package nested) {
+                PrimitiveType found = findPrimitiveTypeByName(nested, name);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static org.eclipse.uml2.uml.Class ensureMetaclassReference(Profile profile, String metaclassName) {

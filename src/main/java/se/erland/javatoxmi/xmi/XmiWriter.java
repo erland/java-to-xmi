@@ -94,6 +94,7 @@ public final class XmiWriter {
         // Always produce a wrapped <xmi:XMI> document for maximum tool compatibility.
         String wrapped = ensureXmiWrapper(xml);
 
+
         // Optional: inject stereotype applications via XMI extension.
         if (jModel != null) {
             wrapped = StereotypeXmiInjector.inject(umlModel, jModel, wrapped);
