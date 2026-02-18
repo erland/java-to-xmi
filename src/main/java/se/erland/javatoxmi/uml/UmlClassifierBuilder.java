@@ -19,6 +19,8 @@ import se.erland.javatoxmi.model.JTypeKind;
  */
 final class UmlClassifierBuilder {
 
+    private final ExternalTypeRegistry externalTypeRegistry = new ExternalTypeRegistry();
+
     Package getOrCreatePackage(UmlBuildContext ctx, String javaPackageName) {
         Model root = ctx.model;
         // Empty package maps to root model.
@@ -158,55 +160,26 @@ final class UmlClassifierBuilder {
                 if ("String".equals(base) || "java.lang.String".equals(base)) {
                     return ensurePrimitive(ctx, "String");
                 }
-                return ensureExternalStub(ctx, base);
+
+                // Boxed primitives / common Java types
+                switch (base) {
+                    case "java.lang.Boolean", "Boolean" -> {
+                        return ensurePrimitive(ctx, "Boolean");
+                    }
+                    case "java.lang.Integer", "Integer", "java.lang.Long", "Long", "java.lang.Short", "Short", "java.lang.Byte", "Byte" -> {
+                        return ensurePrimitive(ctx, "Integer");
+                    }
+                    case "java.lang.Double", "Double", "java.lang.Float", "Float" -> {
+                        return ensurePrimitive(ctx, "Real");
+                    }
+                    case "java.lang.Character", "Character" -> {
+                        return ensurePrimitive(ctx, "String");
+                    }
+                }
+
+                return externalTypeRegistry.ensureExternalStub(ctx, base);
             }
         }
-    }
-
-    private Type ensureExternalStub(UmlBuildContext ctx, String qualifiedOrSimple) {
-        String qn = qualifiedOrSimple == null ? "Object" : qualifiedOrSimple;
-        String base = UmlRelationBuilder.stripGenerics(qn);
-        if (base.endsWith("[]")) base = base.substring(0, base.length() - 2);
-
-        if ("java.lang.String".equals(base) || "String".equals(base)) {
-            return ensurePrimitive(ctx, "String");
-        }
-
-        // Boxed primitives / common types
-        switch (base) {
-            case "java.lang.Boolean", "Boolean" -> {
-                return ensurePrimitive(ctx, "Boolean");
-            }
-            case "java.lang.Integer", "Integer", "java.lang.Long", "Long", "java.lang.Short", "Short", "java.lang.Byte", "Byte" -> {
-                return ensurePrimitive(ctx, "Integer");
-            }
-            case "java.lang.Double", "Double", "java.lang.Float", "Float" -> {
-                return ensurePrimitive(ctx, "Real");
-            }
-            case "java.lang.Character", "Character" -> {
-                return ensurePrimitive(ctx, "String");
-            }
-        }
-
-        String pkgName = "_external";
-        String typeName = base;
-
-        if (base.contains(".")) {
-            int li = base.lastIndexOf('.');
-            pkgName = "_external." + base.substring(0, li);
-            typeName = base.substring(li + 1);
-        }
-
-        Package pkg = getOrCreatePackage(ctx, pkgName);
-        Type existing = pkg.getOwnedType(typeName);
-        if (existing != null) {
-            return existing;
-        }
-
-        org.eclipse.uml2.uml.Class c = pkg.createOwnedClass(typeName, false);
-        ctx.stats.externalStubsCreated++;
-        UmlBuilderSupport.annotateId(c, "ExternalStub:" + base);
-        return c;
     }
 
     private PrimitiveType ensurePrimitive(UmlBuildContext ctx, String name) {
