@@ -79,7 +79,9 @@ public final class UmlBuilder {
 
         UmlClassifierBuilder classifierBuilder = new UmlClassifierBuilder();
         UmlFeatureBuilder featureBuilder = new UmlFeatureBuilder(classifierBuilder);
-        UmlRelationBuilder relationBuilder = new UmlRelationBuilder(classifierBuilder);
+        UmlInheritanceBuilder inheritanceBuilder = new UmlInheritanceBuilder();
+        UmlAssociationBuilder associationBuilder = new UmlAssociationBuilder();
+        UmlDependencyBuilder dependencyBuilder = new UmlDependencyBuilder();
         UmlProfileApplicator profileApplicator = new UmlProfileApplicator();
 
         // 1) Packages (deterministic)
@@ -111,12 +113,13 @@ public final class UmlBuilder {
         for (JType t : types) {
             Classifier c = ctx.classifierByQName.get(t.qualifiedName);
             if (c == null) continue;
-            relationBuilder.addInheritanceAndRealization(ctx, c, t);
+            inheritanceBuilder.addInheritanceAndRealization(ctx, c, t);
         }
         for (JType t : types) {
             Classifier c = ctx.classifierByQName.get(t.qualifiedName);
             if (c == null) continue;
-            relationBuilder.addStructuralRelations(ctx, c, t);
+            associationBuilder.addFieldAssociations(ctx, c, t);
+            dependencyBuilder.addMethodSignatureDependencies(ctx, c, t);
         }
 
         // Profile + stereotypes

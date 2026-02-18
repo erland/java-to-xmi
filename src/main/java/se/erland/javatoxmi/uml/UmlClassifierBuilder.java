@@ -128,7 +128,7 @@ final class UmlClassifierBuilder {
         if (typeRef == null || typeRef.isBlank()) {
             return ensurePrimitive(ctx, "Object");
         }
-        String base = UmlRelationBuilder.stripGenerics(typeRef);
+        String base = UmlAssociationBuilder.stripGenerics(typeRef);
         if (base.endsWith("[]")) {
             base = base.substring(0, base.length() - 2);
         }

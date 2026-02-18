@@ -21,7 +21,7 @@ final class ExternalTypeRegistry {
      */
     Type ensureExternalStub(UmlBuildContext ctx, String qualifiedName) {
         String base = qualifiedName == null ? "Object" : qualifiedName;
-        base = UmlRelationBuilder.stripGenerics(base);
+        base = UmlAssociationBuilder.stripGenerics(base);
         if (base.endsWith("[]")) base = base.substring(0, base.length() - 2);
 
         String pkgName = "_external";
