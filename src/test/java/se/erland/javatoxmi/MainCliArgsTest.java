@@ -1,6 +1,7 @@
 package se.erland.javatoxmi;
 
 import org.junit.jupiter.api.Test;
+import se.erland.javatoxmi.uml.AssociationPolicy;
 
 import java.util.List;
 
@@ -18,7 +19,8 @@ public class MainCliArgsTest {
                 "--include-tests",
                 "--name", "MyModel",
                 "--report", "target/out/report.md",
-                "--fail-on-unresolved", "true"
+                "--fail-on-unresolved", "true",
+                "--associations", "smart"
         };
 
         Main.CliArgs parsed = Main.CliArgs.parse(args);
@@ -28,6 +30,7 @@ public class MainCliArgsTest {
         assertEquals("MyModel", parsed.name);
         assertEquals("target/out/report.md", parsed.report);
         assertTrue(parsed.failOnUnresolved);
+        assertEquals(AssociationPolicy.SMART, parsed.associationPolicy);
         assertEquals(List.of("**/generated/**", "**/*Test.java"), parsed.excludes);
     }
 

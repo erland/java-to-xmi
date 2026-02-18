@@ -7,6 +7,7 @@ import se.erland.javatoxmi.model.JType;
 import se.erland.javatoxmi.model.UnresolvedTypeRef;
 import se.erland.javatoxmi.uml.UmlBuilder;
 import se.erland.javatoxmi.uml.UmlBuildStats;
+import se.erland.javatoxmi.uml.AssociationPolicy;
 import se.erland.javatoxmi.xmi.XmiWriter;
 import se.erland.javatoxmi.report.ReportGenerator;
 
@@ -205,6 +206,9 @@ public final class Main {
         // Step 9: backwards compatibility
         boolean noStereotypes = false;
 
+        // Association emission policy
+        AssociationPolicy associationPolicy = AssociationPolicy.RESOLVED;
+
         // Step 2 flags
         boolean includeTests = false;
         final List<String> excludes = new ArrayList<>();
@@ -250,6 +254,9 @@ public final class Main {
                         break;
                     case "--no-stereotypes":
                         out.noStereotypes = true;
+                        break;
+                    case "--associations":
+                        out.associationPolicy = AssociationPolicy.parseCli(requireValue(args, ++i, "--associations"));
                         break;
                     default:
                         if (a.startsWith("--")) {
@@ -302,6 +309,8 @@ public final class Main {
                     "  --include-tests        Include common test folders (default: excluded)\n" +
                     "  --no-stereotypes       Backwards-compatibility: skip building the JavaAnnotations\n" +
                     "                         profile and do not emit stereotype applications.\n" +
+                    "  --associations <mode>  Control association emission from fields. Modes:\n" +
+                    "                         none | jpa | resolved | smart (default: resolved)\n" +
                     "  -h, --help             Show help\n" +
                     "\n" +
                     "Examples:\n" +
