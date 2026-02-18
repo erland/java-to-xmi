@@ -144,15 +144,10 @@ public final class UmlBuilder {
         }
 
         // Step 3/4: Java annotation profile + stereotypes
-        // Build the profile only if there are annotations present.
-        boolean hasAnyAnnotations = false;
-        for (JType t : types) {
-            if (t.annotations != null && !t.annotations.isEmpty()) {
-                hasAnyAnnotations = true;
-                break;
-            }
-        }
-        if (includeStereotypes && hasAnyAnnotations) {
+        // Always build the profile when stereotypes are enabled.
+        // Rationale: even if there are no type-level annotations, later steps may rely on the
+        // profile for tool metadata (e.g., multiplicity/container tags injected as stereotype apps).
+        if (includeStereotypes) {
             applyJavaAnnotationProfile(model, types);
         }
 

@@ -57,6 +57,26 @@ public final class JavaAnnotationProfileBuilder {
     public static final String PROFILE_URI = "http://java-to-xmi/schemas/JavaAnnotations/1.0";
     public static final String JAVA_ANN_SOURCE = "java-to-xmi:java";
 
+    /**
+     * Stereotype used by java-to-xmi itself to persist additional mapping metadata
+     * (e.g. collection element types, JPA/validation hints) in a tool-friendly way.
+     */
+    public static final String TOOL_TAGS_STEREOTYPE = "J2XTags";
+
+    /** Tag keys emitted by MultiplicityResolver / UmlBuilder and persisted via {@link #TOOL_TAGS_STEREOTYPE}. */
+    public static final String[] TOOL_TAG_KEYS = new String[] {
+            "isArray",
+            "containerKind",
+            "collectionKind",
+            "elementType",
+            "mapKeyType",
+            "mapValueType",
+            "jpaRelation",
+            "nullableSource",
+            "validationSizeMin",
+            "validationSizeMax"
+    };
+
     // Tracks used stereotype names to avoid collisions.
     private final Map<String, String> stereotypeNameToQualified = new HashMap<>();
 
@@ -76,6 +96,7 @@ public final class JavaAnnotationProfileBuilder {
                 annotateIdIfMissing(p, "Profile:" + PROFILE_NAME);
                 ensureStringPrimitive(p);
                 indexExistingStereotypes(p);
+                ensureToolTagsStereotype(p);
                 return p;
             }
         }
@@ -85,7 +106,30 @@ public final class JavaAnnotationProfileBuilder {
         annotateIdIfMissing(profile, "Profile:" + PROFILE_NAME);
         ensureStringPrimitive(profile);
         indexExistingStereotypes(profile);
+        ensureToolTagsStereotype(profile);
         return profile;
+    }
+
+    /** Ensure the tool metadata stereotype exists (and extends NamedElement) so tags can be applied to many UML elements. */
+    private void ensureToolTagsStereotype(Profile profile) {
+        if (profile == null) return;
+        Stereotype st = profile.getOwnedStereotype(TOOL_TAGS_STEREOTYPE);
+        if (st == null) {
+            st = profile.createOwnedStereotype(TOOL_TAGS_STEREOTYPE, false);
+            annotateIdIfMissing(st, "Stereotype:" + PROFILE_NAME + "#" + TOOL_TAGS_STEREOTYPE);
+        }
+
+        // Ensure attributes exist as Strings.
+        for (String key : TOOL_TAG_KEYS) {
+            if (key == null || key.isBlank()) continue;
+            ensureStringAttribute(profile, st, key);
+        }
+
+        // Extend NamedElement so we can apply to Property/Operation/Parameter/Association/etc.
+        org.eclipse.uml2.uml.Class metaclass = ensureMetaclassReference(profile, "NamedElement");
+        if (metaclass != null) {
+            ensureExtension(profile, st, metaclass, false);
+        }
     }
 
     /**
@@ -199,6 +243,40 @@ public final class JavaAnnotationProfileBuilder {
         }
         annotateIdIfMissing(ext, "Extension:" + st.getName() + "->" + metaclass.getName());
         for (Property p : ext.getMemberEnds()) {
+            if (p == null) continue;
+            annotateIdIfMissing(p, "ExtensionEnd:" + st.getName() + "->" + metaclass.getName() + "#" + (p.getName() == null ? "" : p.getName()));
+        }
+        return ext;
+    }
+
+    /**
+     * Ensure the given stereotype has an Extension to the provided metaclass reference.
+     *
+     * <p>This follows the same defensive strategy as {@link #ensureMetaclassExtension(Profile, Stereotype, MetaclassTarget)}
+     * and falls back to manual Extension construction when UML2 refuses {@code createExtension(...)}.</p>
+     */
+    private static Extension ensureExtension(Profile profile, Stereotype st, org.eclipse.uml2.uml.Class metaclass, boolean required) {
+        if (profile == null || st == null || metaclass == null) return null;
+
+        Extension existing = findExistingExtension(profile, st, metaclass);
+        if (existing != null) {
+            annotateIdIfMissing(existing, "Extension:" + st.getName() + "->" + metaclass.getName());
+            for (Property p : existing.getOwnedEnds()) {
+                if (p == null) continue;
+                annotateIdIfMissing(p, "ExtensionEnd:" + st.getName() + "->" + metaclass.getName() + "#" + (p.getName() == null ? "" : p.getName()));
+            }
+            return existing;
+        }
+
+        Extension ext;
+        try {
+            ext = st.createExtension(metaclass, required);
+        } catch (IllegalArgumentException ex) {
+            ext = createExtensionManually(profile, st, metaclass, required);
+        }
+
+        annotateIdIfMissing(ext, "Extension:" + st.getName() + "->" + metaclass.getName());
+        for (Property p : ext.getOwnedEnds()) {
             if (p == null) continue;
             annotateIdIfMissing(p, "ExtensionEnd:" + st.getName() + "->" + metaclass.getName() + "#" + (p.getName() == null ? "" : p.getName()));
         }

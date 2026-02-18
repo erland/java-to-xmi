@@ -4,6 +4,7 @@ import org.eclipse.emf.ecore.EAnnotation;
 import org.eclipse.uml2.uml.Model;
 import org.eclipse.uml2.uml.Profile;
 import org.eclipse.uml2.uml.Stereotype;
+import org.eclipse.uml2.uml.Element;
 import se.erland.javatoxmi.model.JAnnotationUse;
 import se.erland.javatoxmi.model.JModel;
 import se.erland.javatoxmi.model.JType;
@@ -37,6 +38,8 @@ final class StereotypeXmiInjector {
     private static final String ID_ANN_SOURCE = "java-to-xmi:id";
     private static final String ID_ANN_KEY = "id";
 
+    private static final String TAGS_ANN_SOURCE = "java-to-xmi:tags";
+
     private StereotypeXmiInjector() {}
 
     static String inject(Model umlModel, JModel jModel, String xmiWrappedXml) {
@@ -56,6 +59,8 @@ final class StereotypeXmiInjector {
         });
 
         List<InjectedApplication> apps = new ArrayList<>();
+
+        // 1) Java annotation stereotype applications (types)
         for (JType t : types) {
             if (t.annotations == null || t.annotations.isEmpty()) continue;
 
@@ -96,6 +101,13 @@ final class StereotypeXmiInjector {
             }
         }
 
+        // 2) Tool tag stereotype applications (any UML Element with java-to-xmi:tags annotation)
+        StereotypeInfo toolTags = stereotypeByQualifiedName.get("#" + JavaAnnotationProfileBuilder.TOOL_TAGS_STEREOTYPE);
+        if (toolTags != null) {
+            List<InjectedApplication> tagApps = collectToolTagApplications(umlModel, toolTags);
+            apps.addAll(tagApps);
+        }
+
         if (apps.isEmpty()) return xmiWrappedXml;
 
         // Ensure the profile Ecore namespace is declared for stereotype application element names.
@@ -117,6 +129,60 @@ final class StereotypeXmiInjector {
 
         String appsXml = buildStereotypeApplications(apps);
         return injectBeforeClosingXmi(xmiWrappedXml, appsXml);
+    }
+
+    private static List<InjectedApplication> collectToolTagApplications(Model umlModel, StereotypeInfo toolTags) {
+        List<InjectedApplication> out = new ArrayList<>();
+        if (umlModel == null || toolTags == null) return out;
+
+        // Traverse all UML elements deterministically via EMF containment.
+        // We rely on deterministic xmi:ids assigned by XmiWriter (based on java-to-xmi:id annotations).
+        List<Element> elements = new ArrayList<>();
+        elements.add(umlModel);
+        umlModel.eAllContents().forEachRemaining(eo -> {
+            if (eo instanceof Element el) elements.add(el);
+        });
+
+        for (Element el : elements) {
+            if (el == null) continue;
+            EAnnotation ann = el.getEAnnotation(TAGS_ANN_SOURCE);
+            if (ann == null || ann.getDetails() == null || ann.getDetails().isEmpty()) continue;
+
+            String baseRaw = getAnnotatedIdOrDefault(el, null);
+            if (baseRaw == null || baseRaw.isBlank()) {
+                // If we cannot address the base element reliably, skip.
+                continue;
+            }
+            String baseId = baseRaw.startsWith("_") ? baseRaw : "_" + baseRaw;
+
+            InjectedApplication ia = new InjectedApplication();
+            ia.baseId = baseId;
+            ia.baseProperty = "base_NamedElement";
+            ia.stereotypeId = toolTags.id;
+            ia.stereotypeName = toolTags.name;
+
+            // Deterministic application id
+            ia.xmiId = "_" + UmlIdStrategy.id("StereotypeApplication:" + toolTags.name + "@" + baseRaw);
+
+            // Copy only keys that exist as stereotype attributes to avoid unknown-attribute issues in some tools.
+            for (String k : JavaAnnotationProfileBuilder.TOOL_TAG_KEYS) {
+                if (k == null || k.isBlank()) continue;
+                String v = ann.getDetails().get(k);
+                if (v != null) ia.tags.put(k, v);
+            }
+            out.add(ia);
+        }
+
+        // Sort for stable injection
+        out.sort((a, b) -> {
+            int c = nullSafe(a.baseId).compareTo(nullSafe(b.baseId));
+            if (c != 0) return c;
+            c = nullSafe(a.stereotypeId).compareTo(nullSafe(b.stereotypeId));
+            if (c != 0) return c;
+            return nullSafe(a.xmiId).compareTo(nullSafe(b.xmiId));
+        });
+
+        return out;
     }
 
     private static String ensureProfileNamespaceDeclared(String xml) {
