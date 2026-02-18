@@ -17,5 +17,6 @@ public final class UmlBuildStats {
     public int associationsCreated;
     public int enumLiteralsCreated;
     public int externalStubsCreated;
+    public int commentsCreated;
 }
 

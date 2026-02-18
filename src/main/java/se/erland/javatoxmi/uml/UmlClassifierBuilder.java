@@ -2,6 +2,7 @@ package se.erland.javatoxmi.uml;
 
 import org.eclipse.uml2.uml.Class;
 import org.eclipse.uml2.uml.Classifier;
+import org.eclipse.uml2.uml.Comment;
 import org.eclipse.uml2.uml.Enumeration;
 import org.eclipse.uml2.uml.Interface;
 import org.eclipse.uml2.uml.Model;
@@ -116,6 +117,15 @@ final class UmlClassifierBuilder {
         ctx.stats.classifiersCreated++;
         UmlBuilderSupport.annotateId(classifier, "Classifier:" + t.qualifiedName);
         ctx.classifierByQName.put(t.qualifiedName, classifier);
+
+        // Type-level JavaDoc -> UML owned comment (owned by the element)
+        if (t.doc != null && !t.doc.isBlank() && classifier instanceof NamedElement) {
+            Comment c = UMLFactory.eINSTANCE.createComment();
+            c.setBody(t.doc);
+            ((NamedElement) classifier).getOwnedComments().add(c);
+            UmlBuilderSupport.annotateId(c, "Comment:" + t.qualifiedName);
+            ctx.stats.commentsCreated++;
+        }
 
         // Visibility
         if (classifier instanceof NamedElement) {
