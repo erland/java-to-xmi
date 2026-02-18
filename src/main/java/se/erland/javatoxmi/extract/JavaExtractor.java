@@ -33,6 +33,9 @@ import java.util.stream.Collectors;
  */
 public final class JavaExtractor {
 
+    /** Max JavaDoc characters stored per type. If exceeded, text is truncated and suffixed with "…(truncated)". */
+    static final int MAX_TYPE_DOC_CHARS = 16 * 1024;
+
     private final JavaParser parser;
 
     public JavaExtractor() {
@@ -162,6 +165,9 @@ public final class JavaExtractor {
         // Type-level annotations
         List<JAnnotationUse> annotations = AnnotationExtractor.extract(td, ctx);
 
+        // Type-level JavaDoc (best-effort)
+        String doc = extractTypeDoc(td);
+
         // Type parameters visible within the type declaration
         final Set<String> typeParams = new HashSet<>();
         if (td instanceof ClassOrInterfaceDeclaration) {
@@ -235,10 +241,59 @@ public final class JavaExtractor {
                 extendsType,
                 implementsTypes,
                 annotations,
+                doc,
                 fields,
                 methods,
                 enumLiterals
         ));
+    }
+
+    private static String extractTypeDoc(TypeDeclaration<?> td) {
+        // Prefer raw comment content (keeps tags/HTML "as-is"), but normalize leading '*' markers.
+        return td.getJavadocComment()
+                .map(jc -> normalizeDocContent(jc.getContent()))
+                .orElse("");
+    }
+
+    static String normalizeDocContent(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+        String s = raw.replace("\r\n", "\n").replace("\r", "\n");
+        String[] lines = s.split("\n", -1);
+        // Normalize per line first (preserve newlines), then trim leading/trailing blank lines.
+        String[] normLines = new String[lines.length];
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            // Remove common JavaDoc leading '*' decoration.
+            String trimmedLeft = line.stripLeading();
+            if (trimmedLeft.startsWith("*")) {
+                trimmedLeft = trimmedLeft.substring(1);
+                if (trimmedLeft.startsWith(" ")) trimmedLeft = trimmedLeft.substring(1);
+                line = trimmedLeft;
+            }
+            // Collapse consecutive spaces/tabs within the line, preserve newlines.
+            line = line.replace('\t', ' ');
+            line = line.replaceAll(" {2,}", " ");
+            // Avoid trailing whitespace noise that often appears in JavaDoc blocks.
+            line = line.stripTrailing();
+            normLines[i] = line;
+        }
+
+        int start = 0;
+        int end = normLines.length; // exclusive
+        while (start < end && normLines[start].isBlank()) start++;
+        while (end > start && normLines[end - 1].isBlank()) end--;
+
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = start; i < end; i++) {
+            out.append(normLines[i]);
+            if (i < end - 1) out.append('\n');
+        }
+
+        String normalized = out.toString();
+        if (normalized.length() <= MAX_TYPE_DOC_CHARS) return normalized;
+        String suffix = "…(truncated)";
+        int keep = Math.max(0, MAX_TYPE_DOC_CHARS - suffix.length());
+        return normalized.substring(0, keep) + suffix;
     }
 
     private static boolean isSupportedType(TypeDeclaration<?> td) {

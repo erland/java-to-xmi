@@ -33,6 +33,9 @@ public final class JType {
     /** Type-level annotation usages (e.g. {@code @Entity}, {@code @Table(name="x")}). */
     public final List<JAnnotationUse> annotations;
 
+    /** Type-level JavaDoc (best-effort), normalized for stable export. */
+    public final String doc;
+
     public final List<JField> fields;
     public final List<JMethod> methods;
 
@@ -54,6 +57,26 @@ public final class JType {
                  List<JField> fields,
                  List<JMethod> methods,
                  List<String> enumLiterals) {
+        this(packageName, name, qualifiedName, outerQualifiedName, kind, visibility, isAbstract, isStatic, isFinal,
+                extendsType, implementsTypes, annotations, null, fields, methods, enumLiterals);
+    }
+
+    public JType(String packageName,
+                 String name,
+                 String qualifiedName,
+                 String outerQualifiedName,
+                 JTypeKind kind,
+                 JVisibility visibility,
+                 boolean isAbstract,
+                 boolean isStatic,
+                 boolean isFinal,
+                 String extendsType,
+                 List<String> implementsTypes,
+                 List<JAnnotationUse> annotations,
+                 String doc,
+                 List<JField> fields,
+                 List<JMethod> methods,
+                 List<String> enumLiterals) {
         this.packageName = Objects.requireNonNullElse(packageName, "");
         this.name = Objects.requireNonNullElse(name, "");
         this.qualifiedName = Objects.requireNonNullElse(qualifiedName, this.name);
@@ -68,6 +91,7 @@ public final class JType {
         this.extendsType = extendsType;
         this.implementsTypes = implementsTypes == null ? new ArrayList<>() : new ArrayList<>(implementsTypes);
         this.annotations = annotations == null ? new ArrayList<>() : new ArrayList<>(annotations);
+        this.doc = Objects.requireNonNullElse(doc, "");
         this.fields = fields == null ? new ArrayList<>() : new ArrayList<>(fields);
         this.methods = methods == null ? new ArrayList<>() : new ArrayList<>(methods);
         this.enumLiterals = enumLiterals == null ? new ArrayList<>() : new ArrayList<>(enumLiterals);
