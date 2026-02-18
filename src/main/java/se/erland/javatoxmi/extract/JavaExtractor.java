@@ -11,6 +11,7 @@ import com.github.javaparser.ast.type.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.nodeTypes.NodeWithModifiers;
+import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import se.erland.javatoxmi.model.*;
 
 import java.io.IOException;
@@ -158,7 +159,16 @@ public final class JavaExtractor {
         }
 
 
-        List<JAnnotationUse> annotations = extractTypeAnnotations(td, ctx);
+        // Type-level annotations
+        List<JAnnotationUse> annotations = extractAnnotations(td, ctx);
+
+        // Type parameters visible within the type declaration
+        final Set<String> typeParams = new HashSet<>();
+        if (td instanceof ClassOrInterfaceDeclaration) {
+            for (TypeParameter tp : ((ClassOrInterfaceDeclaration) td).getTypeParameters()) {
+                if (tp != null && !tp.getNameAsString().isBlank()) typeParams.add(tp.getNameAsString());
+            }
+        }
                 String extendsType = null;
                 List<String> implementsTypes = new ArrayList<>();
 
@@ -197,16 +207,18 @@ public final class JavaExtractor {
                             JVisibility fVis = visibilityOf(fd);
                             boolean fStatic = fd.isStatic();
                             boolean fFinal = fd.isFinal();
+                            List<JAnnotationUse> fAnns = extractAnnotations(fd, ctx);
                             for (VariableDeclarator var : fd.getVariables()) {
                                 String fType = resolveTypeRef(var.getType(), ctx, nestedByOuter, nestedScopeChain, model, qn, "field '" + var.getNameAsString() + "'");
-                                fields.add(new JField(var.getNameAsString(), fType, fVis, fStatic, fFinal));
+                                TypeRef fTypeRef = parseTypeRef(var.getType(), typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn, "field '" + var.getNameAsString() + "'");
+                                fields.add(new JField(var.getNameAsString(), fType, fTypeRef, fVis, fStatic, fFinal, fAnns));
                             }
                         } else if (member instanceof ConstructorDeclaration) {
                             ConstructorDeclaration cd = (ConstructorDeclaration) member;
-                            methods.add(extractConstructor(cd, ctx, nestedByOuter, nestedScopeChain, model, qn));
+                            methods.add(extractConstructor(cd, typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn));
                         } else if (member instanceof MethodDeclaration) {
                             MethodDeclaration md = (MethodDeclaration) member;
-                            methods.add(extractMethod(md, ctx, nestedByOuter, nestedScopeChain, model, qn));
+                            methods.add(extractMethod(md, typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn));
                         }
                     }
 
@@ -251,6 +263,7 @@ public final class JavaExtractor {
     }
 
     private static JMethod extractConstructor(ConstructorDeclaration cd,
+                                              Set<String> enclosingTypeParams,
                                               ImportContext ctx,
                                               Map<String, Map<String, String>> nestedByOuter,
                                               List<String> nestedScopeChain,
@@ -259,15 +272,21 @@ public final class JavaExtractor {
         JVisibility vis = visibilityOf(cd);
         boolean isStatic = false;
         boolean isAbstract = false;
+        List<JAnnotationUse> annotations = extractAnnotations(cd, ctx);
+        Set<String> visibleTypeParams = mergeTypeParams(enclosingTypeParams, cd.getTypeParameters());
         List<JParam> params = new ArrayList<>();
         for (Parameter p : cd.getParameters()) {
             String pType = resolveTypeRef(p.getType(), ctx, nestedByOuter, nestedScopeChain, model, ownerQn, "ctor '" + cd.getNameAsString() + "' param '" + p.getNameAsString() + "'");
-            params.add(new JParam(p.getNameAsString(), pType));
+            TypeRef pTypeRef = parseTypeRef(paramTypeForVarArgs(p), visibleTypeParams, ctx, nestedByOuter, nestedScopeChain, model, ownerQn,
+                    "ctor '" + cd.getNameAsString() + "' param '" + p.getNameAsString() + "'");
+            List<JAnnotationUse> pAnns = extractAnnotations(p, ctx);
+            params.add(new JParam(p.getNameAsString(), pType, pTypeRef, pAnns));
         }
-        return new JMethod(cd.getNameAsString(), "", vis, isStatic, isAbstract, true, params);
+        return new JMethod(cd.getNameAsString(), "", null, vis, isStatic, isAbstract, true, params, annotations);
     }
 
     private static JMethod extractMethod(MethodDeclaration md,
+                                         Set<String> enclosingTypeParams,
                                          ImportContext ctx,
                                          Map<String, Map<String, String>> nestedByOuter,
                                          List<String> nestedScopeChain,
@@ -276,13 +295,146 @@ public final class JavaExtractor {
         JVisibility vis = visibilityOf(md);
         boolean isStatic = md.isStatic();
         boolean isAbstract = md.isAbstract();
+        List<JAnnotationUse> annotations = extractAnnotations(md, ctx);
+        Set<String> visibleTypeParams = mergeTypeParams(enclosingTypeParams, md.getTypeParameters());
         String ret = resolveTypeRef(md.getType(), ctx, nestedByOuter, nestedScopeChain, model, ownerQn, "method '" + md.getNameAsString() + "' return");
+        TypeRef retRef = parseTypeRef(md.getType(), visibleTypeParams, ctx, nestedByOuter, nestedScopeChain, model, ownerQn, "method '" + md.getNameAsString() + "' return");
         List<JParam> params = new ArrayList<>();
         for (Parameter p : md.getParameters()) {
             String pType = resolveTypeRef(p.getType(), ctx, nestedByOuter, nestedScopeChain, model, ownerQn, "method '" + md.getNameAsString() + "' param '" + p.getNameAsString() + "'");
-            params.add(new JParam(p.getNameAsString(), pType));
+            TypeRef pRef = parseTypeRef(paramTypeForVarArgs(p), visibleTypeParams, ctx, nestedByOuter, nestedScopeChain, model, ownerQn,
+                    "method '" + md.getNameAsString() + "' param '" + p.getNameAsString() + "'");
+            List<JAnnotationUse> pAnns = extractAnnotations(p, ctx);
+            params.add(new JParam(p.getNameAsString(), pType, pRef, pAnns));
         }
-        return new JMethod(md.getNameAsString(), ret, vis, isStatic, isAbstract, false, params);
+        return new JMethod(md.getNameAsString(), ret, retRef, vis, isStatic, isAbstract, false, params, annotations);
+    }
+
+    private static Type paramTypeForVarArgs(Parameter p) {
+        if (p == null) return null;
+        if (!p.isVarArgs()) return p.getType();
+        // Represent varargs as an array for type-structure purposes.
+        return new ArrayType(p.getType());
+    }
+
+    private static Set<String> mergeTypeParams(Set<String> enclosing, NodeList<TypeParameter> methodParams) {
+        Set<String> out = new HashSet<>();
+        if (enclosing != null) out.addAll(enclosing);
+        if (methodParams != null) {
+            for (TypeParameter tp : methodParams) {
+                if (tp == null) continue;
+                String n = tp.getNameAsString();
+                if (n != null && !n.isBlank()) out.add(n);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Parse a JavaParser {@link Type} into a best-effort {@link TypeRef} without symbol solving.
+     *
+     * <p>Resolution strategy:
+     * - populate {@link TypeRef#qnameHint} when the primary type name can be resolved within the project
+     *   or via imports/wildcard imports.
+     * - keep {@link TypeRef#raw} as the original textual representation (generics/arrays intact).
+     * - record unresolved/external type names in {@link JModel} similarly to {@link #resolveTypeRef(Type, ImportContext, Map, List, JModel, String, String)}.</p>
+     */
+    private static TypeRef parseTypeRef(Type t,
+                                        Set<String> visibleTypeParams,
+                                        ImportContext ctx,
+                                        Map<String, Map<String, String>> nestedByOuter,
+                                        List<String> nestedScopeChain,
+                                        JModel model,
+                                        String fromQn,
+                                        String where) {
+        String raw = renderType(t);
+        if (t == null) {
+            return TypeRef.simple(raw, "Object", "java.lang.Object");
+        }
+        if (t instanceof VoidType) {
+            return TypeRef.simple("void", "void", "");
+        }
+        if (t instanceof PrimitiveType) {
+            String s = t.toString();
+            return TypeRef.simple(s, s, "");
+        }
+        if (t instanceof VarType) {
+            return TypeRef.simple("var", "var", "");
+        }
+        if (t instanceof ArrayType) {
+            int dims = 0;
+            Type inner = t;
+            while (inner instanceof ArrayType) {
+                dims++;
+                inner = ((ArrayType) inner).getComponentType();
+            }
+            TypeRef comp = parseTypeRef(inner, visibleTypeParams, ctx, nestedByOuter, nestedScopeChain, model, fromQn, where);
+            return TypeRef.array(raw, comp, dims);
+        }
+        if (t instanceof WildcardType) {
+            WildcardType wt = (WildcardType) t;
+            if (wt.getExtendedType().isPresent()) {
+                TypeRef bound = parseTypeRef(wt.getExtendedType().get(), visibleTypeParams, ctx, nestedByOuter, nestedScopeChain, model, fromQn, where);
+                return TypeRef.wildcard(raw, WildcardBoundKind.EXTENDS, bound);
+            }
+            if (wt.getSuperType().isPresent()) {
+                TypeRef bound = parseTypeRef(wt.getSuperType().get(), visibleTypeParams, ctx, nestedByOuter, nestedScopeChain, model, fromQn, where);
+                return TypeRef.wildcard(raw, WildcardBoundKind.SUPER, bound);
+            }
+            return TypeRef.wildcard(raw, WildcardBoundKind.UNBOUNDED, null);
+        }
+        if (t instanceof ClassOrInterfaceType) {
+            ClassOrInterfaceType cit = (ClassOrInterfaceType) t;
+            String simple = cit.getNameAsString();
+
+            // Type variable? (best effort)
+            boolean isTypeVar = (visibleTypeParams != null && visibleTypeParams.contains(simple)
+                    && cit.getTypeArguments().isEmpty()
+                    && cit.getScope().isEmpty());
+            if (isTypeVar) {
+                return TypeRef.typeVar(raw, simple);
+            }
+
+            String nameWithScope = cit.getNameWithScope();
+            String resolved = resolveWithNestedScope(nameWithScope, ctx, nestedByOuter, nestedScopeChain);
+            if (resolved == null) {
+                // Record unresolved/external similarly to resolveTypeRef()
+                recordTypeNameAsUnresolved(nameWithScope, ctx, model, fromQn, where);
+                // Try to qualify external imports (annotations & types share import table; this is just a hint)
+                String ext = ctx.qualifyExternal(simple);
+                resolved = ext == null ? "" : ext;
+            }
+
+            // Type args
+            if (cit.getTypeArguments().isPresent() && !cit.getTypeArguments().get().isEmpty()) {
+                List<TypeRef> args = new ArrayList<>();
+                for (Type at : cit.getTypeArguments().get()) {
+                    args.add(parseTypeRef(at, visibleTypeParams, ctx, nestedByOuter, nestedScopeChain, model, fromQn, where));
+                }
+                return TypeRef.param(raw, simple, resolved == null ? "" : resolved, args);
+            }
+
+            return TypeRef.simple(raw, simple, resolved == null ? "" : resolved);
+        }
+
+        // Fallback: keep raw string only
+        return TypeRef.simple(raw, raw, "");
+    }
+
+    private static void recordTypeNameAsUnresolved(String typeName, ImportContext ctx, JModel model, String fromQn, String where) {
+        if (typeName == null || typeName.isBlank()) return;
+        // primitives, void, var are not unresolved
+        if (TypeNameUtil.isNonReferenceType(typeName)) return;
+        if (typeName.contains(".")) {
+            model.externalTypeRefs.add(new UnresolvedTypeRef(typeName, fromQn, where));
+            return;
+        }
+        String ext = ctx.qualifyExternal(typeName);
+        if (ext != null) {
+            model.externalTypeRefs.add(new UnresolvedTypeRef(ext, fromQn, where));
+        } else {
+            model.unresolvedTypes.add(new UnresolvedTypeRef(typeName, fromQn, where));
+        }
     }
 
     private static String resolveTypeRef(Type t,
@@ -403,10 +555,10 @@ public final class JavaExtractor {
         return null;
     }
 
-    private static List<JAnnotationUse> extractTypeAnnotations(TypeDeclaration<?> td, ImportContext ctx) {
-        if (td == null) return List.of();
+    private static List<JAnnotationUse> extractAnnotations(NodeWithAnnotations<?> node, ImportContext ctx) {
+        if (node == null) return List.of();
         try {
-            NodeList<AnnotationExpr> anns = td.getAnnotations();
+            NodeList<AnnotationExpr> anns = node.getAnnotations();
             if (anns == null || anns.isEmpty()) return List.of();
             List<JAnnotationUse> out = new ArrayList<>();
             for (AnnotationExpr ae : anns) {
