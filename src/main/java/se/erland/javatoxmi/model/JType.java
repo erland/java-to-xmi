@@ -18,6 +18,20 @@ public final class JType {
      */
     public final String outerQualifiedName;
 
+    /** True if this type is declared inside another type. */
+    public final boolean isNested;
+
+    /**
+     * True if this is a nested type that is effectively static in Java.
+     *
+     * <p>Includes {@code static class}, and also nested {@code interface}, {@code enum}
+     * and {@code @interface} which are implicitly static in Java.</p>
+     */
+    public final boolean isStaticNested;
+
+    /** Java binary name (uses {@code $} between nesting levels). */
+    public final String binaryName;
+
     public final JTypeKind kind;
     public final JVisibility visibility;
     public final boolean isAbstract;
@@ -81,6 +95,9 @@ public final class JType {
         this.name = Objects.requireNonNullElse(name, "");
         this.qualifiedName = Objects.requireNonNullElse(qualifiedName, this.name);
         this.outerQualifiedName = (outerQualifiedName == null || outerQualifiedName.isBlank()) ? null : outerQualifiedName;
+        this.isNested = this.outerQualifiedName != null;
+        this.isStaticNested = this.isNested && (isStatic || kind == JTypeKind.INTERFACE || kind == JTypeKind.ENUM || kind == JTypeKind.ANNOTATION);
+        this.binaryName = computeBinaryName(this.packageName, this.qualifiedName);
 
         this.kind = kind == null ? JTypeKind.CLASS : kind;
         this.visibility = visibility == null ? JVisibility.PACKAGE_PRIVATE : visibility;
@@ -95,5 +112,34 @@ public final class JType {
         this.fields = fields == null ? new ArrayList<>() : new ArrayList<>(fields);
         this.methods = methods == null ? new ArrayList<>() : new ArrayList<>(methods);
         this.enumLiterals = enumLiterals == null ? new ArrayList<>() : new ArrayList<>(enumLiterals);
+    }
+
+    /**
+     * Compute Java binary name from a qualified name that uses dots for nesting.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>pkg="p", qn="p.Outer.Inner" -> "p.Outer$Inner"</li>
+     *   <li>pkg="", qn="Outer.Inner" -> "Outer$Inner"</li>
+     * </ul>
+     */
+    private static String computeBinaryName(String packageName, String qualifiedName) {
+        String pkg = packageName == null ? "" : packageName.trim();
+        String qn = qualifiedName == null ? "" : qualifiedName.trim();
+        if (qn.isEmpty()) return qn;
+
+        // If we know the package, everything after it is the (possibly nested) top-level type name.
+        if (!pkg.isEmpty() && qn.startsWith(pkg + ".")) {
+            String tail = qn.substring(pkg.length() + 1);
+            return pkg + "." + tail.replace('.', '$');
+        }
+
+        // Best-effort fallback when packageName is empty or doesn't match.
+        // For the common "Outer.Inner" case (no package), convert nesting dots to '$'.
+        if (pkg.isEmpty()) {
+            return qn.replace('.', '$');
+        }
+        // Otherwise, keep the qualified name untouched rather than corrupting package separators.
+        return qn;
     }
 }

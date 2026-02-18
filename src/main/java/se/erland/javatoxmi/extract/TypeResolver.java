@@ -91,23 +91,18 @@ final class TypeResolver {
                                          List<String> nestedScopeChain) {
         if (typeName == null || typeName.isBlank()) return null;
 
+        // Resolve chained nested references like "Inner.Deep" or "Outer.Inner.Deep" by
+        // resolving the first segment using the current nested scope, and then walking
+        // nestedByOuter from that resolved outer type.
+        if (typeName.contains(".")) {
+            String chainResolved = resolveNestedChain(typeName, ctx, nestedByOuter, nestedScopeChain);
+            if (chainResolved != null) return chainResolved;
+        }
+
         // Qualified already: attempt direct resolve first
         if (typeName.contains(".")) {
             String direct = ctx.resolve(typeName);
             if (direct != null) return direct;
-        }
-
-        // Handle scoped nested reference like Outer.Inner inside current file
-        // Try to resolve first segment via imports/package, then append remainder and see if it's a project type.
-        int dot = typeName.indexOf('.');
-        if (dot > 0) {
-            String first = typeName.substring(0, dot);
-            String rest = typeName.substring(dot + 1);
-            String resolvedFirst = ctx.resolve(first);
-            if (resolvedFirst != null && !rest.isBlank()) {
-                String cand = resolvedFirst + "." + rest;
-                if (ctx.projectQualifiedTypes.contains(cand)) return cand;
-            }
         }
 
         // Check nested scopes from innermost to outermost
@@ -124,6 +119,47 @@ final class TypeResolver {
 
         // Fallback: let ImportContext handle: exact project type, or currentPackage + name.
         return ctx.resolve(typeName);
+    }
+
+    private static String resolveNestedChain(String dotted,
+                                            ImportContext ctx,
+                                            Map<String, Map<String, String>> nestedByOuter,
+                                            List<String> nestedScopeChain) {
+        if (dotted == null) return null;
+        String s = dotted.trim();
+        if (s.isEmpty() || !s.contains(".")) return null;
+
+        String[] parts = s.split("\\.");
+        if (parts.length < 2) return null;
+
+        // Resolve the first segment in the current nested scope (this is the key case for "Inner.Deep").
+        String current = resolveWithNestedScope(parts[0], ctx, nestedByOuter, nestedScopeChain);
+        if (current == null) return null;
+
+        for (int i = 1; i < parts.length; i++) {
+            String seg = parts[i];
+            if (seg == null || seg.isBlank()) return null;
+
+            Map<String, String> nested = nestedByOuter.get(current);
+            if (nested != null) {
+                String next = nested.get(seg);
+                if (next != null) {
+                    current = next;
+                    continue;
+                }
+            }
+
+            // Fallback: some chains may not be present in nestedByOuter, but still exist as concrete qualified types.
+            String cand = current + "." + seg;
+            if (ctx.projectQualifiedTypes.contains(cand)) {
+                current = cand;
+                continue;
+            }
+
+            return null;
+        }
+
+        return current;
     }
 
     static String renderType(Type t) {

@@ -65,34 +65,17 @@ public final class JavaExtractor {
         }
 
         // 2) Build project type index (qualified name -> stub)
-        // Includes top-level types and nested *member* types inside top-level types.
+        // Includes top-level types and nested *member* types (recursively).
         Map<String, TypeStub> projectTypes = new HashMap<>();
         List<TypeInfo> allTypeInfos = new ArrayList<>();
         // outerQualifiedName -> (nestedSimpleName -> nestedQualifiedName)
         Map<String, Map<String, String>> nestedByOuter = new HashMap<>();
+
         for (ParsedUnit u : units) {
             String pkg = u.cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("");
             for (TypeDeclaration<?> td : u.cu.getTypes()) {
                 if (!isSupportedType(td)) continue;
-
-                String topName = td.getNameAsString();
-                String topQn = qualifiedName(pkg, topName);
-                TypeInfo top = new TypeInfo(pkg, topName, topQn, null, td);
-                allTypeInfos.add(top);
-
-                // Nested member types (one level deep) inside top-level types
-                for (BodyDeclaration<?> member : getMembers(td)) {
-                    if (!(member instanceof TypeDeclaration)) continue;
-                    TypeDeclaration<?> ntd = (TypeDeclaration<?>) member;
-                    if (!isSupportedType(ntd)) continue;
-                    String innerName = ntd.getNameAsString();
-                    String innerQn = qualifiedName(pkg, topName + "." + innerName);
-                    allTypeInfos.add(new TypeInfo(pkg, innerName, innerQn, topQn, ntd));
-
-                    nestedByOuter
-                            .computeIfAbsent(topQn, __ -> new HashMap<>())
-                            .put(innerName, innerQn);
-                }
+                collectTypeInfosRecursive(allTypeInfos, nestedByOuter, pkg, td, null, td.getNameAsString());
             }
         }
         for (TypeInfo ti : allTypeInfos) {
@@ -107,26 +90,71 @@ public final class JavaExtractor {
 
             for (TypeDeclaration<?> td : u.cu.getTypes()) {
                 if (!isSupportedType(td)) continue;
-
-                // Extract top-level
-                String topQn = qualifiedName(pkg, td.getNameAsString());
-                extractOneType(model, ctx, nestedByOuter, List.of(topQn), pkg, td, null);
-
-                // Extract nested member types (one level deep)
-                String topName = td.getNameAsString();
-                for (BodyDeclaration<?> member : getMembers(td)) {
-                    if (!(member instanceof TypeDeclaration)) continue;
-                    TypeDeclaration<?> ntd = (TypeDeclaration<?>) member;
-                    if (!isSupportedType(ntd)) continue;
-                    // Within a nested member type, simple names should resolve to siblings declared in the enclosing type.
-                    extractOneType(model, ctx, nestedByOuter, List.of(topQn), pkg, ntd, topQn, topName);
-                }
+                extractTypeRecursive(model, ctx, nestedByOuter, pkg, td, null, null, List.of());
             }
         }
 
-        // Stable ordering for downstream determinism
+// Stable ordering for downstream determinism
         model.types.sort(Comparator.comparing(t -> t.qualifiedName));
         return model;
+    }
+
+    private static void collectTypeInfosRecursive(List<TypeInfo> out,
+                                                    Map<String, Map<String, String>> nestedByOuter,
+                                                    String pkg,
+                                                    TypeDeclaration<?> td,
+                                                    String outerQn,
+                                                    String pathFromTop) {
+        if (!isSupportedType(td)) return;
+        String simpleName = td.getNameAsString();
+        String qn = qualifiedName(pkg, pathFromTop);
+        out.add(new TypeInfo(pkg, simpleName, qn, outerQn, td));
+
+        // Collect nested member types recursively
+        for (BodyDeclaration<?> member : getMembers(td)) {
+            if (!(member instanceof TypeDeclaration)) continue;
+            TypeDeclaration<?> child = (TypeDeclaration<?>) member;
+            if (!isSupportedType(child)) continue;
+            String childName = child.getNameAsString();
+            String childPath = pathFromTop + "." + childName;
+            String childQn = qualifiedName(pkg, childPath);
+
+            nestedByOuter
+                    .computeIfAbsent(qn, __ -> new HashMap<>())
+                    .put(childName, childQn);
+
+            collectTypeInfosRecursive(out, nestedByOuter, pkg, child, qn, childPath);
+        }
+    }
+
+    private static void extractTypeRecursive(JModel model,
+                                             ImportContext ctx,
+                                             Map<String, Map<String, String>> nestedByOuter,
+                                             String pkg,
+                                             TypeDeclaration<?> td,
+                                             String outerQn,
+                                             String outerPathFromTop,
+                                             List<String> enclosingScopeChain) {
+        String name = td.getNameAsString();
+        String pathFromTop = (outerPathFromTop == null || outerPathFromTop.isBlank())
+                ? name
+                : outerPathFromTop + "." + name;
+        String qn = qualifiedName(pkg, pathFromTop);
+
+        // Within this type, simple names should resolve to nested member types declared in this type,
+        // as well as those in any enclosing types.
+        List<String> scopeChain = new ArrayList<>(enclosingScopeChain);
+        scopeChain.add(qn);
+
+        extractOneType(model, ctx, nestedByOuter, scopeChain, pkg, td, outerQn, outerPathFromTop);
+
+        // Recurse into nested member types
+        for (BodyDeclaration<?> member : getMembers(td)) {
+            if (!(member instanceof TypeDeclaration)) continue;
+            TypeDeclaration<?> child = (TypeDeclaration<?>) member;
+            if (!isSupportedType(child)) continue;
+            extractTypeRecursive(model, ctx, nestedByOuter, pkg, child, qn, pathFromTop, scopeChain);
+        }
     }
 
     private static void extractOneType(JModel model,
