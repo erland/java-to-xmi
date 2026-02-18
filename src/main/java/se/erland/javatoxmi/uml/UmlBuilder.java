@@ -96,9 +96,27 @@ public final class UmlBuilder {
         }
 
         // 2) Classifiers
+        // Create top-level types first, then nested types in increasing nesting depth.
+        // This guarantees enclosing classifiers exist before we attach nested classifiers.
         List<JType> types = new ArrayList<>(jModel.types);
         types.sort(Comparator.comparing(t -> t.qualifiedName));
+
+        List<JType> topLevel = new ArrayList<>();
+        List<JType> nested = new ArrayList<>();
         for (JType t : types) {
+            if (t.isNested) nested.add(t);
+            else topLevel.add(t);
+        }
+
+        for (JType t : topLevel) {
+            classifierBuilder.createClassifier(ctx, t);
+        }
+
+        nested.sort(Comparator
+                .comparingInt((JType t) -> nestingDepth(t.qualifiedName))
+                .thenComparing(t -> t.qualifiedName));
+
+        for (JType t : nested) {
             classifierBuilder.createClassifier(ctx, t);
         }
 
@@ -129,5 +147,16 @@ public final class UmlBuilder {
         }
 
         return new Result(model, stats);
+    }
+
+    private static int nestingDepth(String qualifiedName) {
+        if (qualifiedName == null || qualifiedName.isBlank()) return 0;
+        // Depth is the number of segments after the package. We don't have the package here,
+        // but using total segments works fine for ordering (Outer < Outer.Inner < Outer.Inner.Deep).
+        int dots = 0;
+        for (int i = 0; i < qualifiedName.length(); i++) {
+            if (qualifiedName.charAt(i) == '.') dots++;
+        }
+        return dots;
     }
 }

@@ -11,6 +11,11 @@ import org.eclipse.uml2.uml.Package;
 import org.eclipse.uml2.uml.PrimitiveType;
 import org.eclipse.uml2.uml.Type;
 import org.eclipse.uml2.uml.UMLFactory;
+import org.eclipse.uml2.uml.UMLPackage;
+
+import org.eclipse.emf.common.util.EList;
+import org.eclipse.emf.ecore.EObject;
+import org.eclipse.emf.ecore.EStructuralFeature;
 
 import se.erland.javatoxmi.model.JType;
 import se.erland.javatoxmi.model.JTypeKind;
@@ -59,59 +64,36 @@ final class UmlClassifierBuilder {
 
     void createClassifier(UmlBuildContext ctx, JType t) {
         // Owner can be either a Package (top-level) or an enclosing Classifier (nested member type).
-        Classifier enclosing = null;
-        if (t.outerQualifiedName != null) {
-            enclosing = ctx.classifierByQName.get(t.outerQualifiedName);
-        }
+        Classifier enclosing = (t.outerQualifiedName == null) ? null : ctx.classifierByQName.get(t.outerQualifiedName);
 
+        // IMPORTANT:
+        // In Eclipse UML2 3.1 (2010), many "owned member" lists are derived/unmodifiable.
+        // For nesting, attach via the real EMF containment feature "nestedClassifier" when present.
         Classifier classifier;
-        if (t.kind == JTypeKind.INTERFACE) {
-            Interface i = UMLFactory.eINSTANCE.createInterface();
-            i.setName(t.name);
-            classifier = i;
-        } else if (t.kind == JTypeKind.ENUM) {
-            Enumeration e = UMLFactory.eINSTANCE.createEnumeration();
-            e.setName(t.name);
-            classifier = e;
-        } else {
-            // CLASS or ANNOTATION -> UML Class (annotation can be stereotyped later)
-            Class c = UMLFactory.eINSTANCE.createClass();
-            c.setName(t.name);
-            c.setIsAbstract(t.isAbstract);
-            classifier = c;
-        }
-
         if (enclosing != null) {
-            // Nested member type: attach classifier under its enclosing type.
-            boolean added = false;
-            try {
-                java.lang.reflect.Method m = enclosing.getClass().getMethod("getNestedClassifiers");
-                Object v = m.invoke(enclosing);
-                if (v instanceof java.util.List) {
-                    @SuppressWarnings("unchecked")
-                    java.util.List<org.eclipse.uml2.uml.Classifier> list = (java.util.List<org.eclipse.uml2.uml.Classifier>) v;
-                    list.add(classifier);
-                    added = true;
+            classifier = createClassifierInstance(t);
+            boolean attached = attachAsNested(enclosing, classifier);
+            if (!attached) {
+                // Defensive fallback: if the enclosing metaclass can't own nested classifiers in this
+                // UML2 version, keep the model buildable by placing it at package level.
+                Package owner = getOrCreatePackage(ctx, t.packageName);
+                if (t.kind == JTypeKind.INTERFACE) {
+                    classifier = owner.createOwnedInterface(t.name);
+                } else if (t.kind == JTypeKind.ENUM) {
+                    classifier = owner.createOwnedEnumeration(t.name);
+                } else {
+                    classifier = owner.createOwnedClass(t.name, t.isAbstract);
                 }
-            } catch (ReflectiveOperationException ignore) {
-                // fall through
-            }
-
-            if (!added) {
-                try {
-                    ((org.eclipse.uml2.uml.Namespace) enclosing).getOwnedMembers().add((NamedElement) classifier);
-                    added = true;
-                } catch (UnsupportedOperationException ignore) {
-                    // fall through
-                }
-            }
-
-            if (!added) {
-                throw new IllegalStateException("Unable to attach nested member type '" + t.name + "' to enclosing type '" + t.outerQualifiedName + "'");
             }
         } else {
             Package owner = getOrCreatePackage(ctx, t.packageName);
-            owner.getOwnedTypes().add(classifier);
+            if (t.kind == JTypeKind.INTERFACE) {
+                classifier = owner.createOwnedInterface(t.name);
+            } else if (t.kind == JTypeKind.ENUM) {
+                classifier = owner.createOwnedEnumeration(t.name);
+            } else {
+                classifier = owner.createOwnedClass(t.name, t.isAbstract);
+            }
         }
 
         ctx.stats.classifiersCreated++;
@@ -131,6 +113,74 @@ final class UmlClassifierBuilder {
         if (classifier instanceof NamedElement) {
             UmlBuilderSupport.setVisibility((NamedElement) classifier, t.visibility);
         }
+    }
+
+    /**
+     * Create a classifier instance (without assuming containment).
+     * Containment is established separately (package-owned vs nested-owned).
+     */
+    private static Classifier createClassifierInstance(JType t) {
+        if (t.kind == JTypeKind.INTERFACE) {
+            Interface i = UMLFactory.eINSTANCE.createInterface();
+            i.setName(t.name);
+            return i;
+        }
+        if (t.kind == JTypeKind.ENUM) {
+            Enumeration e = UMLFactory.eINSTANCE.createEnumeration();
+            e.setName(t.name);
+            return e;
+        }
+
+        Class c = UMLFactory.eINSTANCE.createClass();
+        c.setName(t.name);
+        c.setIsAbstract(t.isAbstract);
+        return c;
+    }
+
+    /**
+     * Attach {@code nested} as a nested classifier owned by {@code enclosing}.
+     *
+     * Eclipse UML2 3.1 implements several membership features as derived unions. Adding to those ELists
+     * can throw {@link UnsupportedOperationException}. The safest available approach without relying on
+     * newer helper APIs is to add via the underlying EMF structural feature when it exists.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static boolean attachAsNested(Classifier enclosing, Classifier nested) {
+        if (!(enclosing instanceof EObject) || !(nested instanceof EObject)) {
+            return false;
+        }
+        EObject enc = (EObject) enclosing;
+        EObject child = (EObject) nested;
+
+        // Prefer the direct containment reference on Classifier: nestedClassifier
+        EStructuralFeature f = enc.eClass().getEStructuralFeature("nestedClassifier");
+        if (f != null) {
+            try {
+                Object v = enc.eGet(f);
+                if (v instanceof EList) {
+                    ((EList) v).add(child);
+                    return true;
+                }
+            } catch (UnsupportedOperationException ex) {
+                // fall through
+            }
+        }
+
+        // Secondary attempt: ownedMember (sometimes concrete/containment depending on metaclass)
+        f = enc.eClass().getEStructuralFeature("ownedMember");
+        if (f != null) {
+            try {
+                Object v = enc.eGet(f);
+                if (v instanceof EList) {
+                    ((EList) v).add(child);
+                    return true;
+                }
+            } catch (UnsupportedOperationException ex) {
+                // ignore
+            }
+        }
+
+        return false;
     }
 
     Type resolveUmlType(UmlBuildContext ctx, String typeRef) {
