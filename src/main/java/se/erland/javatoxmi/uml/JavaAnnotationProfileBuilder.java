@@ -72,6 +72,9 @@ public final class JavaAnnotationProfileBuilder {
             "mapKeyType",
             "mapValueType",
             "jpaRelation",
+            "relationSource",
+            "aggregation",
+            "jpaOrphanRemoval",
             "nullableSource",
             "validationSizeMin",
             "validationSizeMax"

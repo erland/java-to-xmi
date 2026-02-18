@@ -110,7 +110,7 @@ public final class Main {
         // Step 4: build UML object graph
         final UmlBuilder.Result umlResult;
         try {
-            umlResult = new UmlBuilder().build(jModel, modelName, !parsed.noStereotypes);
+            umlResult = new UmlBuilder().build(jModel, modelName, !parsed.noStereotypes, parsed.associationPolicy);
         } catch (RuntimeException ex) {
             System.err.println("Error: UML build failed.");
             System.err.println(ex.getMessage());

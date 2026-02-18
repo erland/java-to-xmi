@@ -64,6 +64,8 @@ public final class UmlBuilder {
 
     private UmlBuildStats stats = new UmlBuildStats();
 
+    private AssociationPolicy associationPolicy = AssociationPolicy.RESOLVED;
+
     // Deterministic maps
     private final Map<String, Package> packageByName = new HashMap<>();
     private final Map<String, Classifier> classifierByQName = new HashMap<>();
@@ -89,6 +91,18 @@ public final class UmlBuilder {
      *                           stereotype-related output (backwards-compat mode).
      */
     public Result build(JModel jModel, String modelName, boolean includeStereotypes) {
+        return build(jModel, modelName, includeStereotypes, AssociationPolicy.RESOLVED);
+    }
+
+    /**
+     * Build UML model.
+     *
+     * @param includeStereotypes when false, skips building the JavaAnnotations profile and avoids
+     *                           stereotype-related output (backwards-compat mode).
+     * @param associationPolicy controls whether fields become UML Associations or stay attribute-only.
+     */
+    public Result build(JModel jModel, String modelName, boolean includeStereotypes, AssociationPolicy associationPolicy) {
+        this.associationPolicy = associationPolicy == null ? AssociationPolicy.RESOLVED : associationPolicy;
         Objects.requireNonNull(jModel, "jModel");
         if (modelName == null || modelName.isBlank()) modelName = "JavaModel";
 
@@ -435,9 +449,28 @@ public final class UmlBuilder {
             AssociationTarget at = computeAssociationTarget(f);
             if (at == null) continue;
 
+            // Resolve the association target to an in-model classifier (if possible)
             Classifier target = resolveLocalClassifier(at.targetRef);
+            boolean resolvedToClassifier = target != null && target != classifier;
+
+            // Decide whether to create an association line or keep attribute-only.
+            boolean createAssoc = RelationHeuristics.shouldCreateAssociation(f, t, associationPolicy, resolvedToClassifier);
+
+            // Always tag the owned field property with relation decision metadata (when present).
+            if (classifier instanceof StructuredClassifier) {
+                StructuredClassifier sc = (StructuredClassifier) classifier;
+                Property owned = findOwnedAttribute(sc, f.name);
+                if (owned != null) {
+                    annotateTags(owned, relationDecisionTags(f, associationPolicy, resolvedToClassifier));
+                    annotateTags(owned, aggregationDecisionTags(f));
+                }
+            }
+
+            if (!createAssoc) {
+                continue;
+            }
+
             if (target == null) continue;
-            if (target == classifier) continue;
             if (!(classifier instanceof StructuredClassifier) || !(target instanceof Type)) continue;
 
             // Reuse the owned attribute created in addFeatures() as the navigable association end.
@@ -454,11 +487,13 @@ public final class UmlBuilder {
             endToTarget.setType((Type) target);
             endToTarget.setLower(at.lower);
             endToTarget.setUpper(at.upper == MultiplicityResolver.STAR ? -1 : at.upper);
-            endToTarget.setAggregation(AggregationKind.NONE_LITERAL);
+            endToTarget.setAggregation(RelationHeuristics.aggregationKindFor(f));
             setVisibility(endToTarget, f.visibility);
 
             // Re-apply tags in case the property was created via fallback.
             annotateTags(endToTarget, at.tags);
+            annotateTags(endToTarget, relationDecisionTags(f, associationPolicy, true));
+            annotateTags(endToTarget, aggregationDecisionTags(f));
 
             // Create an association owned by the source type's package (deterministic and tool-friendly).
             Package ownerPkg = ((Type) classifier).getPackage();
@@ -488,6 +523,9 @@ public final class UmlBuilder {
             stats.associationsCreated++;
             annotateId(assoc, "Association:" + t.qualifiedName + "#" + f.name + "->" + at.targetRef + multiplicityKey(at));
             annotateId(endToSource, "AssociationEnd:" + t.qualifiedName + "#" + f.name + "<-" + t.qualifiedName);
+
+            annotateTags(assoc, relationDecisionTags(f, associationPolicy, true));
+            annotateTags(assoc, aggregationDecisionTags(f));
         }
 
         // Method dependencies
@@ -709,6 +747,64 @@ private Classifier resolveLocalClassifier(String possiblySimpleOrQualified) {
 
         MultiplicityResolver.Result mr = multiplicityResolver.resolve(f.typeRef, f.annotations);
         return new AssociationTarget(target, mr.lower, mr.upper, mr.tags);
+    }
+
+    private static Map<String, String> relationDecisionTags(JField f, AssociationPolicy policy, boolean resolvedTarget) {
+        if (f == null) return Map.of();
+        if (policy == null) policy = AssociationPolicy.RESOLVED;
+
+        // Attribute-only reasons
+        if (RelationHeuristics.isEmbedded(f)) {
+            return Map.of("relationSource", "embedded");
+        }
+        if (RelationHeuristics.isElementCollection(f)) {
+            return Map.of("relationSource", "elementCollection");
+        }
+
+        boolean hasJpa = RelationHeuristics.hasJpaRelationship(f);
+        if (hasJpa) {
+            return Map.of("relationSource", "jpa");
+        }
+
+        switch (policy) {
+            case NONE:
+                return Map.of("relationSource", "none");
+            case JPA_ONLY:
+                return Map.of("relationSource", "jpaOnly");
+            case SMART:
+                if (RelationHeuristics.isValueLike(f)) {
+                    return Map.of("relationSource", "valueBlacklist");
+                }
+                if (resolvedTarget) {
+                    return Map.of("relationSource", "resolved");
+                }
+                return Map.of("relationSource", "unresolved");
+            case RESOLVED:
+            default:
+                return Map.of("relationSource", resolvedTarget ? "resolved" : "unresolved");
+        }
+    }
+
+    private static Map<String, String> aggregationDecisionTags(JField f) {
+        if (f == null) return Map.of();
+        AggregationKind ak = RelationHeuristics.aggregationKindFor(f);
+        String agg = ak == AggregationKind.COMPOSITE_LITERAL ? "composite" : "none";
+        java.util.LinkedHashMap<String, String> tags = new java.util.LinkedHashMap<>();
+        tags.put("aggregation", agg);
+
+        // Expose JPA orphanRemoval as a debugging aid when present.
+        if (f.annotations != null) {
+            for (se.erland.javatoxmi.model.JAnnotationUse a : f.annotations) {
+                if (a == null) continue;
+                if ("OneToMany".equals(a.simpleName) || "OneToOne".equals(a.simpleName)
+                        || "javax.persistence.OneToMany".equals(a.qualifiedName) || "jakarta.persistence.OneToMany".equals(a.qualifiedName)
+                        || "javax.persistence.OneToOne".equals(a.qualifiedName) || "jakarta.persistence.OneToOne".equals(a.qualifiedName)) {
+                    String v = a.values == null ? null : a.values.get("orphanRemoval");
+                    if (v != null) tags.put("jpaOrphanRemoval", v);
+                }
+            }
+        }
+        return Map.copyOf(tags);
     }
 
     /**
