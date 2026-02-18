@@ -49,24 +49,42 @@ final class ImportContext {
     }
 
     /** Resolve a type simple name to a project-qualified name where possible. */
+        /** Resolve a type simple name (or dotted nested name) to a project-qualified name where possible. */
     String resolve(String typeName) {
         if (typeName == null || typeName.isBlank()) return null;
 
-        // Already qualified and exists in project
-        if (typeName.contains(".") && projectQualifiedTypes.contains(typeName)) return typeName;
+        // Normalize Java binary nested name separators ($) to source-style dots.
+        String tn = typeName.indexOf('$') >= 0 ? typeName.replace('$', '.') : typeName;
 
-        // Same package
-        String cand = currentPackage == null || currentPackage.isBlank() ? typeName : currentPackage + "." + typeName;
+        // Already qualified and exists in project
+        if (tn.contains(".") && projectQualifiedTypes.contains(tn)) return tn;
+
+        // Same package (works also for dotted names like Outer.Inner)
+        String cand = currentPackage == null || currentPackage.isBlank() ? tn : currentPackage + "." + tn;
         if (projectQualifiedTypes.contains(cand)) return cand;
 
-        // Explicit import
-        String exp = explicitImportsBySimple.get(typeName);
+        // If dotted (e.g. Outer.Inner) and Outer is explicitly imported, qualify the chain.
+        if (tn.contains(".")) {
+            int dot = tn.indexOf('.');
+            String head = tn.substring(0, dot);
+            String tail = tn.substring(dot + 1);
+            if (!head.isBlank() && !tail.isBlank()) {
+                String expHead = explicitImportsBySimple.get(head);
+                if (expHead != null) {
+                    String qn = expHead + "." + tail;
+                    if (projectQualifiedTypes.contains(qn)) return qn;
+                }
+            }
+        }
+
+        // Explicit import (simple name)
+        String exp = explicitImportsBySimple.get(tn);
         if (exp != null && projectQualifiedTypes.contains(exp)) return exp;
 
-        // Wildcard imports
+        // Wildcard imports (also supports dotted names)
         for (String wi : wildcardImports) {
             if (wi == null || wi.isBlank()) continue;
-            String w = wi + "." + typeName;
+            String w = wi + "." + tn;
             if (projectQualifiedTypes.contains(w)) return w;
         }
         return null;

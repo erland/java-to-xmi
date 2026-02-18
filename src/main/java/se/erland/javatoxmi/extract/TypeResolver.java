@@ -85,40 +85,46 @@ final class TypeResolver {
     /**
      * Resolve simple names to nested member types visible in the enclosing type scope.
      */
+        /**
+     * Resolve simple names to nested member types visible in the enclosing type scope.
+     */
     static String resolveWithNestedScope(String typeName,
                                          ImportContext ctx,
                                          Map<String, Map<String, String>> nestedByOuter,
                                          List<String> nestedScopeChain) {
         if (typeName == null || typeName.isBlank()) return null;
 
+        // Normalize Java binary nested name separators ($) to source-style dots.
+        String tn = typeName.indexOf('$') >= 0 ? typeName.replace('$', '.') : typeName;
+
         // Resolve chained nested references like "Inner.Deep" or "Outer.Inner.Deep" by
         // resolving the first segment using the current nested scope, and then walking
         // nestedByOuter from that resolved outer type.
-        if (typeName.contains(".")) {
-            String chainResolved = resolveNestedChain(typeName, ctx, nestedByOuter, nestedScopeChain);
+        if (tn.contains(".")) {
+            String chainResolved = resolveNestedChain(tn, ctx, nestedByOuter, nestedScopeChain);
             if (chainResolved != null) return chainResolved;
         }
 
         // Qualified already: attempt direct resolve first
-        if (typeName.contains(".")) {
-            String direct = ctx.resolve(typeName);
+        if (tn.contains(".")) {
+            String direct = ctx.resolve(tn);
             if (direct != null) return direct;
         }
 
-        // Check nested scopes from innermost to outermost
-        if (nestedScopeChain != null) {
+        // Check nested scopes from innermost to outermost (simple names only)
+        if (nestedScopeChain != null && !tn.contains(".")) {
             for (int i = nestedScopeChain.size() - 1; i >= 0; i--) {
                 String outerQn = nestedScopeChain.get(i);
                 if (outerQn == null) continue;
                 Map<String, String> nested = nestedByOuter.get(outerQn);
                 if (nested == null) continue;
-                String cand = nested.get(typeName);
+                String cand = nested.get(tn);
                 if (cand != null) return cand;
             }
         }
 
-        // Fallback: let ImportContext handle: exact project type, or currentPackage + name.
-        return ctx.resolve(typeName);
+        // Fallback: let ImportContext handle: exact project type, explicit/wildcard imports, or currentPackage + name.
+        return ctx.resolve(tn);
     }
 
     private static String resolveNestedChain(String dotted,

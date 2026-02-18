@@ -46,7 +46,7 @@ final class TypeNameUtil {
         StringBuilder token = new StringBuilder();
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            boolean ok = Character.isJavaIdentifierPart(c) || c == '.';
+            boolean ok = Character.isJavaIdentifierPart(c) || c == '.' || c == '$';
             if (ok) {
                 token.append(c);
             } else {
