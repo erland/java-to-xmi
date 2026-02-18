@@ -146,6 +146,10 @@ public final class UmlBuilder {
             profileApplicator.applyJavaAnnotationProfile(ctx, types);
         }
 
+        // Step 4 — determinism hardening: ensure every element has a stable java-to-xmi:id
+        // annotation so the XMI writer never needs to fall back to traversal-index-based IDs.
+        UmlBuilderSupport.ensureAllElementsHaveId(model);
+
         return new Result(model, stats);
     }
 

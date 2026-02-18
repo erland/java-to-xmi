@@ -12,6 +12,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+
+import org.eclipse.emf.common.util.TreeIterator;
+import org.eclipse.emf.ecore.EObject;
 
 /**
  * Small shared helpers used by the UML build steps.
@@ -53,6 +59,111 @@ final class UmlBuilderSupport {
             ann = element.createEAnnotation(UmlBuilder.ID_ANNOTATION_SOURCE);
         }
         ann.getDetails().put("id", key);
+    }
+
+    /**
+     * Ensure every UML2 {@link Element} in the model has a deterministic java-to-xmi:id annotation.
+     *
+     * <p>This prevents the XMI writer from falling back to traversal-index-based IDs, which can
+     * change when containment changes (e.g. when introducing nested types ownership).</p>
+     */
+    static void ensureAllElementsHaveId(Element root) {
+        if (root == null) return;
+
+        // Root first
+        ensureId(root);
+
+        TreeIterator<EObject> it = root.eAllContents();
+        while (it.hasNext()) {
+            EObject obj = it.next();
+            if (obj instanceof Element) {
+                ensureId((Element) obj);
+            }
+        }
+    }
+
+    private static void ensureId(Element element) {
+        if (element == null) return;
+        EAnnotation ann = element.getEAnnotation(UmlBuilder.ID_ANNOTATION_SOURCE);
+        if (ann != null) {
+            String existing = ann.getDetails().get("id");
+            if (existing != null && !existing.trim().isEmpty()) return;
+        }
+
+        // Prefer a name-based stable key when possible.
+        String key;
+        if (element instanceof NamedElement) {
+            NamedElement ne = (NamedElement) element;
+            String qn = safeUmlQualifiedName(ne);
+            if (qn != null && !qn.isBlank()) {
+                key = "Auto:" + ne.eClass().getName() + ":" + qn;
+            } else {
+                key = "Auto:" + ne.eClass().getName() + ":" + stableContainerHash(ne);
+            }
+        } else {
+            key = "Auto:" + element.eClass().getName() + ":" + stableContainerHash(element);
+        }
+
+        annotateId(element, key);
+    }
+
+    private static String safeUmlQualifiedName(NamedElement ne) {
+        // In UML2 3.x, getQualifiedName() can return null if not in a namespace chain.
+        try {
+            String qn = ne.getQualifiedName();
+            if (qn != null && !qn.isBlank()) return qn;
+        } catch (Exception ignore) {
+        }
+
+        // Build a conservative qualified name from namespace chain.
+        List<String> parts = new ArrayList<>();
+        NamedElement cur = ne;
+        while (cur != null) {
+            String n = cur.getName();
+            if (n != null && !n.isBlank()) {
+                parts.add(n);
+            }
+            EObject c = ((EObject) cur).eContainer();
+            if (c instanceof NamedElement) cur = (NamedElement) c;
+            else break;
+        }
+        if (parts.isEmpty()) return null;
+        Collections.reverse(parts);
+        return String.join("::", parts);
+    }
+
+    private static String stableContainerHash(EObject obj) {
+        // A deterministic fallback based on containment chain + eClass + (optional) name.
+        // This is still sensitive to containment changes, but it is deterministic and avoids
+        // dependence on traversal index ordering.
+        StringBuilder sb = new StringBuilder();
+        EObject cur = obj;
+        while (cur != null) {
+            sb.append('/').append(cur.eClass().getName());
+            if (cur instanceof NamedElement) {
+                String n = ((NamedElement) cur).getName();
+                if (n != null && !n.isBlank()) sb.append(':').append(n.trim());
+            }
+            cur = cur.eContainer();
+        }
+        return shortSha256Hex(sb.toString());
+    }
+
+    private static String shortSha256Hex(String s) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] dig = md.digest((s == null ? "" : s).getBytes(StandardCharsets.UTF_8));
+            StringBuilder out = new StringBuilder();
+            for (byte b : dig) {
+                int v = b & 0xff;
+                String hx = Integer.toHexString(v);
+                if (hx.length() == 1) out.append('0');
+                out.append(hx);
+            }
+            return out.substring(0, 24);
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString((s == null ? "" : s).hashCode());
+        }
     }
 
     static void annotateTags(Element element, Map<String, String> tags) {

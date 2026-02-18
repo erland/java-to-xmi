@@ -137,16 +137,14 @@ public final class XmiWriter {
 
     private static void assignDeterministicIds(XMLResource resource, Model umlModel) {
         // Root first
-        setId(resource, umlModel, idFromAnnotationOrFallback(umlModel, "root"));
+        setId(resource, umlModel, idFromAnnotationOrFallback(umlModel));
 
         // Then all contents in stable traversal order (EMF eAllContents is stable given stable containment).
         TreeIterator<EObject> it = umlModel.eAllContents();
-        int i = 0;
         while (it.hasNext()) {
             EObject obj = it.next();
-            String id = idFromAnnotationOrFallback(obj, "n" + i);
+            String id = idFromAnnotationOrFallback(obj);
             setId(resource, obj, id);
-            i++;
         }
     }
 
@@ -211,13 +209,16 @@ public final class XmiWriter {
         return sanitized;
     }
 
-    private static String idFromAnnotationOrFallback(EObject obj, String fallbackSalt) {
+    private static String idFromAnnotationOrFallback(EObject obj) {
         String ann = getAnnotatedId(obj);
         if (ann != null && !ann.trim().isEmpty()) {
             return ann;
         }
         // Fallback: stable hash of containment path.
-        String basis = fallbackSalt + ":" + stablePath(obj);
+        // IMPORTANT: do not use traversal index salts here, because traversal order can change
+        // when containment changes (e.g. nested types). Using only the containment path keeps
+        // the fallback deterministic for a given containment structure.
+        String basis = stablePath(obj);
         return shortSha256Hex(basis);
     }
 
