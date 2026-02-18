@@ -154,9 +154,61 @@ public final class XmiWriter {
         if (rawId == null || rawId.trim().isEmpty()) {
             return;
         }
-        // Ensure valid XML ID token. Prefix with '_' to be safe.
-        String id = rawId.startsWith("_") ? rawId : "_" + rawId;
+        // Ensure valid XML ID token. XMI ids must be valid XML IDs (Name tokens) and must not
+        // contain characters like '<' or '>' (e.g. generics in type names). Keep determinism.
+        String id = sanitizeXmiId(rawId);
         resource.setID(obj, id);
+    }
+
+    /**
+     * Sanitize a deterministic id string into a valid XML ID (Name).
+     *
+     * <p>Allowed characters for XML Names: letters, digits, '.', '-', '_', ':' (plus some unicode).
+     * To be conservative and tool-friendly, we restrict to ASCII name chars and replace everything
+     * else with '_'. When sanitization changes the id, we append a short stable hash suffix to
+     * minimize collisions.</p>
+     */
+    private static String sanitizeXmiId(String raw) {
+        String base = raw == null ? "" : raw.trim();
+        if (base.isEmpty()) {
+            return "_" + shortSha256Hex("empty");
+        }
+
+        // Replace any illegal chars (including '<', '>', spaces, quotes, etc.).
+        String sanitized = base.replaceAll("[^A-Za-z0-9_.:-]", "_");
+
+        // XML Name must start with a letter or underscore (we choose underscore).
+        if (!sanitized.matches("^[A-Za-z_].*")) {
+            sanitized = "_" + sanitized;
+        }
+
+        // Keep ids reasonably short for tool compatibility.
+        boolean truncated = false;
+        int maxLen = 120;
+        if (sanitized.length() > maxLen) {
+            sanitized = sanitized.substring(0, maxLen);
+            truncated = true;
+        }
+
+        // If we changed the string (or truncated), append a short stable suffix to reduce collisions.
+        if (!sanitized.equals(base) || truncated) {
+            String h = shortSha256Hex(base);
+            String suffix = h.length() > 10 ? h.substring(0, 10) : h;
+            // Avoid exceeding max length too much.
+            int room = Math.max(0, maxLen - sanitized.length());
+            if (room < (1 + suffix.length())) {
+                int keep = Math.max(1, sanitized.length() - ((1 + suffix.length()) - room));
+                sanitized = sanitized.substring(0, keep);
+            }
+            sanitized = sanitized + "_" + suffix;
+        }
+
+        // Always prefix '_' for safety across tools that prefer underscore-start IDs.
+        if (!sanitized.startsWith("_")) {
+            sanitized = "_" + sanitized;
+        }
+
+        return sanitized;
     }
 
     private static String idFromAnnotationOrFallback(EObject obj, String fallbackSalt) {
