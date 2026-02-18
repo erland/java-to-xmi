@@ -55,7 +55,9 @@ java -jar target/java-to-xmi.jar --source ... --no-stereotypes
 - `--include-tests` include common test folders
 - `--fail-on-unresolved <true|false>` exit with code 3 if unknown types remain
 - `--no-stereotypes` skip the JavaAnnotations profile + stereotype output
+- `--associations <none|jpa|resolved|smart>` control when fields become association lines (vs attribute-only)
 
 More details:
 - `docs/functional-specification.md`
 - `docs/backwards-compatibility.md`
+- `docs/associations.md`
