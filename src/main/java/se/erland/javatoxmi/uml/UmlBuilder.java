@@ -32,6 +32,8 @@ import se.erland.javatoxmi.model.JParam;
 import se.erland.javatoxmi.model.JType;
 import se.erland.javatoxmi.model.JTypeKind;
 import se.erland.javatoxmi.model.JVisibility;
+import se.erland.javatoxmi.model.TypeRef;
+import se.erland.javatoxmi.model.TypeRefKind;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -56,6 +58,9 @@ import org.eclipse.uml2.uml.StructuredClassifier;
  */
 public final class UmlBuilder {
     public static final String ID_ANNOTATION_SOURCE = "java-to-xmi:id";
+    public static final String TAGS_ANNOTATION_SOURCE = "java-to-xmi:tags";
+
+    private final MultiplicityResolver multiplicityResolver = new MultiplicityResolver();
 
     private UmlBuildStats stats = new UmlBuildStats();
 
@@ -344,6 +349,12 @@ public final class UmlBuilder {
                 setVisibility(p, f.visibility);
                 if (f.isStatic) p.setIsStatic(true);
                 if (f.isFinal) p.setIsReadOnly(true);
+
+                // Multiplicity + element/container tagging (arrays/collections/Optional + validation/JPA hints)
+                MultiplicityResolver.Result mr = multiplicityResolver.resolve(f.typeRef, f.annotations);
+                p.setLower(mr.lower);
+                p.setUpper(mr.upper == MultiplicityResolver.STAR ? -1 : mr.upper);
+                annotateTags(p, mr.tags);
             }
         }
 
@@ -447,9 +458,12 @@ public final class UmlBuilder {
             // Ensure correct typing + multiplicity on the field-end.
             endToTarget.setType((Type) target);
             endToTarget.setLower(at.lower);
-            endToTarget.setUpper(at.upper);
+            endToTarget.setUpper(at.upper == MultiplicityResolver.STAR ? -1 : at.upper);
             endToTarget.setAggregation(AggregationKind.NONE_LITERAL);
             setVisibility(endToTarget, f.visibility);
+
+            // Re-apply tags in case the property was created via fallback.
+            annotateTags(endToTarget, at.tags);
 
             // Create an association owned by the source type's package (deterministic and tool-friendly).
             Package ownerPkg = ((Type) classifier).getPackage();
@@ -640,57 +654,140 @@ private Classifier resolveLocalClassifier(String possiblySimpleOrQualified) {
         final int lower;
         final int upper;
 
-        private AssociationTarget(String targetRef, int lower, int upper) {
+        final Map<String, String> tags;
+
+        private AssociationTarget(String targetRef, int lower, int upper, Map<String, String> tags) {
             this.targetRef = targetRef;
             this.lower = lower;
             this.upper = upper;
+            this.tags = tags == null ? Map.of() : Map.copyOf(new java.util.LinkedHashMap<>(tags));
         }
     }
 
-    private static AssociationTarget computeAssociationTarget(JField f) {
-        if (f == null || f.type == null || f.type.isBlank()) return null;
-        String raw = f.type.trim();
+    private AssociationTarget computeAssociationTarget(JField f) {
+        if (f == null) return null;
 
-        // Arrays
-        if (raw.endsWith("[]")) {
-            String base = raw.substring(0, raw.length() - 2).trim();
-            base = stripGenerics(base);
-            return new AssociationTarget(base, 0, -1);
+        // 1) Prefer TypeRef-based target selection when available.
+        String target = null;
+        if (f.typeRef != null) {
+            target = pickAssociationTargetFromTypeRef(f.typeRef);
         }
 
-        String base = stripGenerics(raw);
-        String simple = simpleName(base);
+        // 2) Fallback to legacy string heuristics.
+        if (target == null || target.isBlank()) {
+            if (f.type == null || f.type.isBlank()) return null;
+            String raw = f.type.trim();
 
-        // Optional<T> => 0..1 to T
-        if (isOptionalLike(simple)) {
-            String arg0 = firstGenericArg(raw);
-            if (arg0 == null) return null;
-            String target = stripArraySuffix(stripGenerics(arg0));
-            return new AssociationTarget(target, 0, 1);
+            // Arrays
+            if (raw.endsWith("[]")) {
+                String base = raw.substring(0, raw.length() - 2).trim();
+                base = stripGenerics(base);
+                target = base;
+            } else {
+                String base = stripGenerics(raw);
+                String simple = simpleName(base);
+
+                // Optional<T> => to T
+                if (isOptionalLike(simple)) {
+                    String arg0 = firstGenericArg(raw);
+                    if (arg0 == null) return null;
+                    target = stripArraySuffix(stripGenerics(arg0));
+                } else if (isMapLike(simple)) {
+                    // Map<K,V> => to V (or K if only one arg)
+                    String inner = genericInner(raw);
+                    if (inner == null) return null;
+                    java.util.List<String> args = splitTopLevelTypeArgs(inner);
+                    if (args.isEmpty()) return null;
+                    String chosen = args.size() >= 2 ? args.get(1) : args.get(0);
+                    target = stripArraySuffix(stripGenerics(chosen));
+                } else if (isCollectionLike(base)) {
+                    // Collection-like containers => to element type
+                    String arg0 = firstGenericArg(raw);
+                    if (arg0 == null) return null;
+                    target = stripArraySuffix(stripGenerics(arg0));
+                } else {
+                    // Default reference
+                    target = stripArraySuffix(stripGenerics(raw));
+                }
+            }
         }
 
-        // Map<K,V> => 0..* to V (or K if only one arg is present)
-        if (isMapLike(simple)) {
-            String inner = genericInner(raw);
-            if (inner == null) return null;
-            java.util.List<String> args = splitTopLevelTypeArgs(inner);
-            if (args.isEmpty()) return null;
-            String chosen = args.size() >= 2 ? args.get(1) : args.get(0);
-            String target = stripArraySuffix(stripGenerics(chosen));
-            return new AssociationTarget(target, 0, -1);
+        MultiplicityResolver.Result mr = multiplicityResolver.resolve(f.typeRef, f.annotations);
+        return new AssociationTarget(target, mr.lower, mr.upper, mr.tags);
+    }
+
+    /**
+     * Best-effort selection of an association target from a TypeRef.
+     *
+     * <p>For arrays/collections/Optional, prefers the element type.
+     * For Map&lt;K,V&gt;, prefers the value type.</p>
+     */
+    private static String pickAssociationTargetFromTypeRef(TypeRef t) {
+        if (t == null) return null;
+
+        // Arrays: component
+        if (t.kind == TypeRefKind.ARRAY || safe(t.raw).endsWith("[]")) {
+            TypeRef elem = firstArg(t);
+            return bestTypeKey(elem);
         }
 
-        // Collection-like containers (List/Set/Collection/Iterable) => 0..* to element type
-        if (isCollectionLike(base)) {
-            String arg0 = firstGenericArg(raw);
-            if (arg0 == null) return null;
-            String target = stripArraySuffix(stripGenerics(arg0));
-            return new AssociationTarget(target, 0, -1);
+        // Optional/Collection: first arg
+        if (isContainerLike(t)) {
+            TypeRef elem = firstArg(t);
+            return bestTypeKey(elem);
         }
 
-        // Default reference => 0..1 (more realistic than 1..1 for Java fields)
-        String target = stripArraySuffix(stripGenerics(raw));
-        return new AssociationTarget(target, 0, 1);
+        // Map: value arg
+        if (isMapLike(t)) {
+            if (t.args != null && t.args.size() >= 2) {
+                return bestTypeKey(t.args.get(1));
+            }
+        }
+
+        return bestTypeKey(t);
+    }
+
+    private static boolean isContainerLike(TypeRef t) {
+        if (t == null) return false;
+        String sn = safe(t.simpleName);
+        String qn = safe(t.qnameHint);
+        String raw = safe(t.raw);
+
+        if ("Optional".equals(sn)) return true;
+        if ("Collection".equals(sn) || "List".equals(sn) || "Set".equals(sn) || "Iterable".equals(sn)) return true;
+
+        if (qn.endsWith("java.util.Optional")) return true;
+        if (qn.endsWith("java.util.Collection") || qn.endsWith("java.util.List") || qn.endsWith("java.util.Set") || qn.endsWith("java.lang.Iterable")) return true;
+
+        return raw.startsWith("Optional<") || raw.startsWith("List<") || raw.startsWith("Set<")
+                || raw.startsWith("Collection<") || raw.startsWith("Iterable<");
+    }
+
+    private static boolean isMapLike(TypeRef t) {
+        if (t == null) return false;
+        String sn = safe(t.simpleName);
+        String qn = safe(t.qnameHint);
+        String raw = safe(t.raw);
+        if ("Map".equals(sn)) return true;
+        if (qn.endsWith("java.util.Map")) return true;
+        return raw.startsWith("Map<");
+    }
+
+    private static TypeRef firstArg(TypeRef t) {
+        if (t == null || t.args == null || t.args.isEmpty()) return null;
+        return t.args.get(0);
+    }
+
+    private static String bestTypeKey(TypeRef t) {
+        if (t == null) return null;
+        if (!safe(t.qnameHint).isBlank()) return t.qnameHint;
+        if (!safe(t.raw).isBlank()) return t.raw;
+        if (!safe(t.simpleName).isBlank()) return t.simpleName;
+        return null;
+    }
+
+    private static String safe(String s) {
+        return s == null ? "" : s;
     }
 
     private static String multiplicityKey(AssociationTarget at) {
@@ -872,5 +969,28 @@ private static void addAnnotationValue(Element element, String source, String va
         }
         ann.getDetails().put("id", id);
         ann.getDetails().put("key", key);
+    }
+
+    /**
+     * Store best-effort mapping metadata (e.g., collection element type, JPA relation kind)
+     * as an EAnnotation on the UML element.
+     *
+     * <p>This is intentionally lightweight; Step 5 can map these details into stereotype
+     * applications in the serialized XMI if desired.</p>
+     */
+    private static void annotateTags(Element element, Map<String, String> tags) {
+        if (element == null || tags == null || tags.isEmpty()) return;
+        EAnnotation ann = element.getEAnnotation(TAGS_ANNOTATION_SOURCE);
+        if (ann == null) {
+            ann = element.createEAnnotation(TAGS_ANNOTATION_SOURCE);
+        }
+        // deterministic key order
+        List<String> keys = new ArrayList<>(tags.keySet());
+        keys.sort(String::compareTo);
+        for (String k : keys) {
+            if (k == null || k.isBlank()) continue;
+            String v = tags.get(k);
+            ann.getDetails().put(k, v == null ? "" : v);
+        }
     }
 }
