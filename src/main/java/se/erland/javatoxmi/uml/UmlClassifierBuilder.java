@@ -64,7 +64,10 @@ final class UmlClassifierBuilder {
 
     void createClassifier(UmlBuildContext ctx, JType t) {
         // Owner can be either a Package (top-level) or an enclosing Classifier (nested member type).
-        Classifier enclosing = (t.outerQualifiedName == null) ? null : ctx.classifierByQName.get(t.outerQualifiedName);
+        Classifier enclosing = null;
+        if (ctx.nestedTypesMode != NestedTypesMode.FLATTEN) {
+            enclosing = (t.outerQualifiedName == null) ? null : ctx.classifierByQName.get(t.outerQualifiedName);
+        }
 
         // IMPORTANT:
         // In Eclipse UML2 3.1 (2010), many "owned member" lists are derived/unmodifiable.

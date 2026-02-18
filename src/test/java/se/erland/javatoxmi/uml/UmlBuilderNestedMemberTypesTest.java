@@ -103,6 +103,50 @@ public class UmlBuilderNestedMemberTypesTest {
         assertEquals(List.of("X", "Y"), kindLits);
     }
 
+    @Test
+    void nestedMemberTypesCanBeMirroredIntoPackageViaElementImportWhenEnabled() throws Exception {
+        Path root = Files.createTempDirectory("java-to-xmi-nested-types-import");
+        Path src = root.resolve("src/main/java/com/acme");
+        Files.createDirectories(src);
+
+        write(src.resolve("Outer.java"), """
+                package com.acme;
+
+                public class Outer {
+                  public static class Inner { }
+                  public interface IInner { }
+                  public enum E { A, B }
+                }
+                """);
+
+        var files = SourceScanner.scan(root.resolve("src/main/java"), List.of(), false);
+        JModel jModel = new JavaExtractor().extract(root.resolve("src/main/java"), files);
+
+        UmlBuilder.Result result = new UmlBuilder().build(
+                jModel,
+                "Tmp",
+                true,
+                AssociationPolicy.RESOLVED,
+                NestedTypesMode.UML_IMPORT
+        );
+        Model model = result.umlModel;
+
+        Package acme = findPackage(model, "com.acme");
+        assertNotNull(acme);
+
+        // Still not package-owned
+        assertNull(acme.getOwnedType("Inner"));
+        assertNull(acme.getOwnedType("IInner"));
+        assertNull(acme.getOwnedType("E"));
+
+        // But mirrored via ElementImport for discoverability.
+        var imports = acme.getElementImports();
+        assertNotNull(imports);
+        assertTrue(imports.stream().anyMatch(ei -> ei.getImportedElement() != null && "Inner".equals(ei.getImportedElement().getName())));
+        assertTrue(imports.stream().anyMatch(ei -> ei.getImportedElement() != null && "IInner".equals(ei.getImportedElement().getName())));
+        assertTrue(imports.stream().anyMatch(ei -> ei.getImportedElement() != null && "E".equals(ei.getImportedElement().getName())));
+    }
+
     private static void write(Path file, String content) throws Exception {
         Files.writeString(file, content, StandardCharsets.UTF_8);
     }

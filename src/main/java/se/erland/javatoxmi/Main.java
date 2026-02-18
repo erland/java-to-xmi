@@ -8,6 +8,7 @@ import se.erland.javatoxmi.model.UnresolvedTypeRef;
 import se.erland.javatoxmi.uml.UmlBuilder;
 import se.erland.javatoxmi.uml.UmlBuildStats;
 import se.erland.javatoxmi.uml.AssociationPolicy;
+import se.erland.javatoxmi.uml.NestedTypesMode;
 import se.erland.javatoxmi.xmi.XmiWriter;
 import se.erland.javatoxmi.report.ReportGenerator;
 
@@ -110,7 +111,13 @@ public final class Main {
         // Step 4: build UML object graph
         final UmlBuilder.Result umlResult;
         try {
-            umlResult = new UmlBuilder().build(jModel, modelName, !parsed.noStereotypes, parsed.associationPolicy);
+            umlResult = new UmlBuilder().build(
+                    jModel,
+                    modelName,
+                    !parsed.noStereotypes,
+                    parsed.associationPolicy,
+                    parsed.nestedTypesMode
+            );
         } catch (RuntimeException ex) {
             System.err.println("Error: UML build failed.");
             System.err.println(ex.getMessage());
@@ -209,6 +216,9 @@ public final class Main {
         // Association emission policy
         AssociationPolicy associationPolicy = AssociationPolicy.RESOLVED;
 
+        // Nested types exposure mode
+        NestedTypesMode nestedTypesMode = NestedTypesMode.UML;
+
         // Step 2 flags
         boolean includeTests = false;
         final List<String> excludes = new ArrayList<>();
@@ -257,6 +267,9 @@ public final class Main {
                         break;
                     case "--associations":
                         out.associationPolicy = AssociationPolicy.parseCli(requireValue(args, ++i, "--associations"));
+                        break;
+                    case "--nested-types":
+                        out.nestedTypesMode = NestedTypesMode.parseCli(requireValue(args, ++i, "--nested-types"));
                         break;
                     default:
                         if (a.startsWith("--")) {
@@ -311,6 +324,8 @@ public final class Main {
                     "                         profile and do not emit stereotype applications.\n" +
                     "  --associations <mode>  Control association emission from fields. Modes:\n" +
                     "                         none | jpa | resolved | smart (default: resolved)\n" +
+                    "  --nested-types <mode>  Control nested member type exposure. Modes:\n" +
+                    "                         uml | uml+import | flatten (default: uml)\n" +
                     "  -h, --help             Show help\n" +
                     "\n" +
                     "Examples:\n" +

@@ -2,7 +2,11 @@ package se.erland.javatoxmi.uml;
 
 import org.eclipse.emf.ecore.EAnnotation;
 import org.eclipse.uml2.uml.Element;
+import org.eclipse.uml2.uml.ElementImport;
 import org.eclipse.uml2.uml.NamedElement;
+import org.eclipse.uml2.uml.Package;
+import org.eclipse.uml2.uml.PackageableElement;
+import org.eclipse.uml2.uml.UMLFactory;
 import org.eclipse.uml2.uml.VisibilityKind;
 import se.erland.javatoxmi.model.JMethod;
 import se.erland.javatoxmi.model.JParam;
@@ -17,7 +21,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 import org.eclipse.emf.common.util.TreeIterator;
+import org.eclipse.emf.common.util.EList;
 import org.eclipse.emf.ecore.EObject;
+import org.eclipse.emf.ecore.EStructuralFeature;
 
 /**
  * Small shared helpers used by the UML build steps.
@@ -130,6 +136,49 @@ final class UmlBuilderSupport {
         if (parts.isEmpty()) return null;
         Collections.reverse(parts);
         return String.join("::", parts);
+    }
+
+    /**
+     * Ensure an {@link ElementImport} exists in {@code pkg} for {@code imported}.
+     *
+     * <p>This is used for the optional "uml+import" nested types mode. It does not duplicate
+     * the classifier in the package; it only adds an import so some consumers can discover
+     * nested types more easily.</p>
+     */
+    static void ensureElementImport(Package pkg, PackageableElement imported) {
+        if (pkg == null || imported == null) return;
+
+        // Avoid duplicates
+        try {
+            for (ElementImport ei : pkg.getElementImports()) {
+                if (ei != null && ei.getImportedElement() == imported) return;
+            }
+        } catch (Exception ignore) {
+            // We'll fall through and attempt to create; duplicates are still unlikely.
+        }
+
+        ElementImport ei = UMLFactory.eINSTANCE.createElementImport();
+        ei.setImportedElement(imported);
+        ei.setVisibility(VisibilityKind.PUBLIC_LITERAL);
+
+        // Attach via the real containment reference "elementImport" when present to avoid
+        // derived/unmodifiable lists in older UML2 versions.
+        if (pkg instanceof EObject) {
+            EObject eo = (EObject) pkg;
+            EStructuralFeature f = eo.eClass().getEStructuralFeature("elementImport");
+            if (f != null) {
+                Object cur = eo.eGet(f);
+                if (cur instanceof EList) {
+                    @SuppressWarnings("unchecked")
+                    EList<EObject> list = (EList<EObject>) cur;
+                    list.add((EObject) ei);
+                    return;
+                }
+            }
+        }
+
+        // Fallback: try the typed list (may still work).
+        pkg.getElementImports().add(ei);
     }
 
     private static String stableContainerHash(EObject obj) {

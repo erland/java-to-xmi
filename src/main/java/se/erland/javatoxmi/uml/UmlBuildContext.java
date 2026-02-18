@@ -18,6 +18,7 @@ final class UmlBuildContext {
     final UmlBuildStats stats;
     final MultiplicityResolver multiplicityResolver;
     final AssociationPolicy associationPolicy;
+    final NestedTypesMode nestedTypesMode;
 
     // Deterministic maps
     final Map<String, Package> packageByName = new HashMap<>();
@@ -26,10 +27,12 @@ final class UmlBuildContext {
     UmlBuildContext(Model model,
                     UmlBuildStats stats,
                     MultiplicityResolver multiplicityResolver,
-                    AssociationPolicy associationPolicy) {
+                    AssociationPolicy associationPolicy,
+                    NestedTypesMode nestedTypesMode) {
         this.model = model;
         this.stats = stats;
         this.multiplicityResolver = multiplicityResolver;
         this.associationPolicy = associationPolicy;
+        this.nestedTypesMode = nestedTypesMode == null ? NestedTypesMode.UML : nestedTypesMode;
     }
 }

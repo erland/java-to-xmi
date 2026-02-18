@@ -61,9 +61,27 @@ public final class UmlBuilder {
      * @param associationPolicy controls whether fields become UML Associations or stay attribute-only.
      */
     public Result build(JModel jModel, String modelName, boolean includeStereotypes, AssociationPolicy associationPolicy) {
+        return build(jModel, modelName, includeStereotypes, associationPolicy, NestedTypesMode.UML);
+    }
+
+    /**
+     * Build UML model.
+     *
+     * @param includeStereotypes when false, skips building the JavaAnnotations profile and avoids
+     *                           stereotype-related output (backwards-compat mode).
+     * @param associationPolicy controls whether fields become UML Associations or stay attribute-only.
+     * @param nestedTypesMode controls whether nested Java member types are nested-only, nested+imported into
+     *                        the owning Java package, or flattened for backwards compatibility.
+     */
+    public Result build(JModel jModel,
+                        String modelName,
+                        boolean includeStereotypes,
+                        AssociationPolicy associationPolicy,
+                        NestedTypesMode nestedTypesMode) {
         Objects.requireNonNull(jModel, "jModel");
         if (modelName == null || modelName.isBlank()) modelName = "JavaModel";
         AssociationPolicy ap = associationPolicy == null ? AssociationPolicy.RESOLVED : associationPolicy;
+        NestedTypesMode ntm = nestedTypesMode == null ? NestedTypesMode.UML : nestedTypesMode;
 
         UmlBuildStats stats = new UmlBuildStats();
 
@@ -75,7 +93,7 @@ public final class UmlBuilder {
         model.setName(modelName);
         UmlBuilderSupport.annotateId(model, "Model:" + modelName);
 
-        UmlBuildContext ctx = new UmlBuildContext(model, stats, multiplicityResolver, ap);
+        UmlBuildContext ctx = new UmlBuildContext(model, stats, multiplicityResolver, ap, ntm);
 
         UmlClassifierBuilder classifierBuilder = new UmlClassifierBuilder();
         UmlFeatureBuilder featureBuilder = new UmlFeatureBuilder(classifierBuilder);
@@ -101,23 +119,42 @@ public final class UmlBuilder {
         List<JType> types = new ArrayList<>(jModel.types);
         types.sort(Comparator.comparing(t -> t.qualifiedName));
 
-        List<JType> topLevel = new ArrayList<>();
-        List<JType> nested = new ArrayList<>();
-        for (JType t : types) {
-            if (t.isNested) nested.add(t);
-            else topLevel.add(t);
-        }
+        if (ntm == NestedTypesMode.FLATTEN) {
+            // Backwards-compat: treat everything as package-owned.
+            for (JType t : types) {
+                classifierBuilder.createClassifier(ctx, t);
+            }
+        } else {
+            List<JType> topLevel = new ArrayList<>();
+            List<JType> nested = new ArrayList<>();
+            for (JType t : types) {
+                if (t.isNested) nested.add(t);
+                else topLevel.add(t);
+            }
 
-        for (JType t : topLevel) {
-            classifierBuilder.createClassifier(ctx, t);
-        }
+            for (JType t : topLevel) {
+                classifierBuilder.createClassifier(ctx, t);
+            }
 
-        nested.sort(Comparator
-                .comparingInt((JType t) -> nestingDepth(t.qualifiedName))
-                .thenComparing(t -> t.qualifiedName));
+            nested.sort(Comparator
+                    .comparingInt((JType t) -> nestingDepth(t.qualifiedName))
+                    .thenComparing(t -> t.qualifiedName));
 
-        for (JType t : nested) {
-            classifierBuilder.createClassifier(ctx, t);
+            for (JType t : nested) {
+                classifierBuilder.createClassifier(ctx, t);
+            }
+
+            // Step 5 — consumer-facing sanity: optionally mirror nested classifiers into the owning
+            // Java package via ElementImport (does not duplicate classifiers).
+            if (ntm == NestedTypesMode.UML_IMPORT) {
+                for (JType t : nested) {
+                    Classifier nestedClassifier = ctx.classifierByQName.get(t.qualifiedName);
+                    if (nestedClassifier == null) continue;
+                    if (t.packageName == null || t.packageName.isBlank()) continue;
+                    org.eclipse.uml2.uml.Package pkg = classifierBuilder.getOrCreatePackage(ctx, t.packageName);
+                    UmlBuilderSupport.ensureElementImport(pkg, nestedClassifier);
+                }
+            }
         }
 
         // 3) Features (fields/methods)
