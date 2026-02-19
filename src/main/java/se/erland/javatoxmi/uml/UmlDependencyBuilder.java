@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -41,6 +42,24 @@ final class UmlDependencyBuilder {
             Dependency d = classifier.createDependency((NamedElement) target);
             ctx.stats.dependenciesCreated++;
             UmlBuilderSupport.annotateId(d, "Dependency:" + t.qualifiedName + "->" + depType);
+        }
+    }
+
+    void addMethodBodyDependencies(UmlBuildContext ctx, Classifier classifier, JType t) {
+        if (ctx == null || classifier == null || t == null) return;
+        if (t.methodBodyTypeDependencies == null || t.methodBodyTypeDependencies.isEmpty()) return;
+
+        List<String> deps = new ArrayList<>(t.methodBodyTypeDependencies);
+        Collections.sort(deps);
+        for (String depTypeRaw : deps) {
+            String depType = UmlAssociationBuilder.stripGenerics(depTypeRaw);
+            Classifier target = ctx.classifierByQName.get(depType);
+            if (target == null) continue;
+            if (target == classifier) continue;
+            Dependency d = classifier.createDependency((NamedElement) target);
+            ctx.stats.dependenciesCreated++;
+            UmlBuilderSupport.annotateId(d, "DependencyCall:" + t.qualifiedName + "->" + depType);
+            UmlBuilderSupport.annotateTags(d, Map.of("kind", "invocation"));
         }
     }
 }

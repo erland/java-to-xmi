@@ -100,7 +100,7 @@ public final class Main {
         // Step 3: parse + extract Java semantic model
         final JModel jModel;
         try {
-            jModel = new JavaExtractor().extract(sourcePath, javaFiles);
+            jModel = new JavaExtractor().extract(sourcePath, javaFiles, parsed.methodBodyCallDependencies);
         } catch (RuntimeException ex) {
             System.err.println("Error: extraction failed.");
             System.err.println(ex.getMessage());
@@ -116,7 +116,8 @@ public final class Main {
                     modelName,
                     !parsed.noStereotypes,
                     parsed.associationPolicy,
-                    parsed.nestedTypesMode
+                    parsed.nestedTypesMode,
+                    parsed.methodBodyCallDependencies
             );
         } catch (RuntimeException ex) {
             System.err.println("Error: UML build failed.");
@@ -219,6 +220,9 @@ public final class Main {
         // Nested types exposure mode
         NestedTypesMode nestedTypesMode = NestedTypesMode.UML;
 
+        // Optional: dependencies derived from method bodies (approximate call graph)
+        boolean methodBodyCallDependencies = false;
+
         // Step 2 flags
         boolean includeTests = false;
         final List<String> excludes = new ArrayList<>();
@@ -271,6 +275,15 @@ public final class Main {
                     case "--nested-types":
                         out.nestedTypesMode = NestedTypesMode.parseCli(requireValue(args, ++i, "--nested-types"));
                         break;
+                    case "--call-deps":
+                        // Optional boolean form ("--call-deps true|false")
+                        // and flag form ("--call-deps" -> true)
+                        if (i + 1 < args.length && looksLikeBoolean(args[i + 1])) {
+                            out.methodBodyCallDependencies = parseBoolean(requireValue(args, ++i, "--call-deps"), "--call-deps");
+                        } else {
+                            out.methodBodyCallDependencies = true;
+                        }
+                        break;
                     default:
                         if (a.startsWith("--")) {
                             throw new IllegalArgumentException("Unknown argument: " + a);
@@ -306,6 +319,12 @@ public final class Main {
             throw new IllegalArgumentException("Invalid boolean for " + flag + ": " + v);
         }
 
+        static boolean looksLikeBoolean(String v) {
+            if (v == null) return false;
+            String s = v.trim().toLowerCase();
+            return s.equals("true") || s.equals("false") || s.equals("1") || s.equals("0") || s.equals("yes") || s.equals("no");
+        }
+
         static void printHelp() {
             System.out.println(
                     "java-to-xmi\n" +
@@ -326,6 +345,8 @@ public final class Main {
                     "                         none | jpa | resolved | smart (default: resolved)\n" +
                     "  --nested-types <mode>  Control nested member type exposure. Modes:\n" +
                     "                         uml | uml+import | flatten (default: uml)\n" +
+                    "  --call-deps [bool]    (Optional) Add conservative dependencies from method bodies (approx. call graph).\n" +
+                    "                         Default: false. Use '--call-deps' to enable or '--call-deps false' to disable.\n" +
                     "  -h, --help             Show help\n" +
                     "\n" +
                     "Examples:\n" +

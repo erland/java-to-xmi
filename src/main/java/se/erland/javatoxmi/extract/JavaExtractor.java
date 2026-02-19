@@ -45,6 +45,16 @@ public final class JavaExtractor {
     }
 
     public JModel extract(Path sourceRoot, List<Path> javaFiles) {
+        return extract(sourceRoot, javaFiles, false);
+    }
+
+    /**
+     * Extract Java model.
+     *
+     * @param includeMethodBodyCallDependencies when true, extracts additional conservative dependencies
+     *                                         from method/constructor bodies (approximate call graph).
+     */
+    public JModel extract(Path sourceRoot, List<Path> javaFiles, boolean includeMethodBodyCallDependencies) {
         JModel model = new JModel(sourceRoot, javaFiles);
 
         // 1) Parse all compilation units (collect parse errors but continue)
@@ -90,7 +100,7 @@ public final class JavaExtractor {
 
             for (TypeDeclaration<?> td : u.cu.getTypes()) {
                 if (!isSupportedType(td)) continue;
-                extractTypeRecursive(model, ctx, nestedByOuter, pkg, td, null, null, List.of());
+                extractTypeRecursive(model, ctx, nestedByOuter, pkg, td, null, null, List.of(), includeMethodBodyCallDependencies);
             }
         }
 
@@ -134,7 +144,8 @@ public final class JavaExtractor {
                                              TypeDeclaration<?> td,
                                              String outerQn,
                                              String outerPathFromTop,
-                                             List<String> enclosingScopeChain) {
+                                             List<String> enclosingScopeChain,
+                                             boolean includeMethodBodyCallDependencies) {
         String name = td.getNameAsString();
         String pathFromTop = (outerPathFromTop == null || outerPathFromTop.isBlank())
                 ? name
@@ -146,14 +157,14 @@ public final class JavaExtractor {
         List<String> scopeChain = new ArrayList<>(enclosingScopeChain);
         scopeChain.add(qn);
 
-        extractOneType(model, ctx, nestedByOuter, scopeChain, pkg, td, outerQn, outerPathFromTop);
+        extractOneType(model, ctx, nestedByOuter, scopeChain, pkg, td, outerQn, outerPathFromTop, includeMethodBodyCallDependencies);
 
         // Recurse into nested member types
         for (BodyDeclaration<?> member : getMembers(td)) {
             if (!(member instanceof TypeDeclaration)) continue;
             TypeDeclaration<?> child = (TypeDeclaration<?>) member;
             if (!isSupportedType(child)) continue;
-            extractTypeRecursive(model, ctx, nestedByOuter, pkg, child, qn, pathFromTop, scopeChain);
+            extractTypeRecursive(model, ctx, nestedByOuter, pkg, child, qn, pathFromTop, scopeChain, includeMethodBodyCallDependencies);
         }
     }
 
@@ -175,6 +186,18 @@ public final class JavaExtractor {
                                        TypeDeclaration<?> td,
                                        String outerQn,
                                        String outerSimpleName) {
+        extractOneType(model, ctx, nestedByOuter, nestedScopeChain, pkg, td, outerQn, outerSimpleName, false);
+    }
+
+    private static void extractOneType(JModel model,
+                                       ImportContext ctx,
+                                       Map<String, Map<String, String>> nestedByOuter,
+                                       List<String> nestedScopeChain,
+                                       String pkg,
+                                       TypeDeclaration<?> td,
+                                       String outerQn,
+                                       String outerSimpleName,
+                                       boolean includeMethodBodyCallDependencies) {
         JTypeKind kind = kindOf(td);
         JVisibility vis = visibilityOf(td);
         boolean isAbstract = hasModifier(td, Modifier.Keyword.ABSTRACT);
@@ -223,8 +246,10 @@ public final class JavaExtractor {
                 }
 
                 List<JField> fields = new ArrayList<>();
+                Map<String, String> fieldTypeByName = new HashMap<>();
                 List<JMethod> methods = new ArrayList<>();
                 List<String> enumLiterals = new ArrayList<>();
+                Set<String> methodBodyDeps = includeMethodBodyCallDependencies ? new HashSet<>() : Collections.emptySet();
 
                 // Enum literals
                 if (td instanceof EnumDeclaration) {
@@ -234,27 +259,42 @@ public final class JavaExtractor {
                     }
                 }
 
-                // Fields
+                // Members: first collect fields (for later this.field call resolution)
                 for (BodyDeclaration<?> member : getMembers(td)) {
-                        if (member instanceof FieldDeclaration) {
-                            FieldDeclaration fd = (FieldDeclaration) member;
-                            JVisibility fVis = visibilityOf(fd);
-                            boolean fStatic = fd.isStatic();
-                            boolean fFinal = fd.isFinal();
-                            List<JAnnotationUse> fAnns = AnnotationExtractor.extract(fd, ctx);
-                            for (VariableDeclarator var : fd.getVariables()) {
-                                String fType = TypeResolver.resolveTypeRef(var.getType(), ctx, nestedByOuter, nestedScopeChain, model, qn, "field '" + var.getNameAsString() + "'");
-                                TypeRef fTypeRef = TypeRefParser.parse(var.getType(), typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn, "field '" + var.getNameAsString() + "'");
-                                fields.add(new JField(var.getNameAsString(), fType, fTypeRef, fVis, fStatic, fFinal, fAnns));
-                            }
-                        } else if (member instanceof ConstructorDeclaration) {
-                            ConstructorDeclaration cd = (ConstructorDeclaration) member;
-                            methods.add(extractConstructor(cd, typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn));
-                        } else if (member instanceof MethodDeclaration) {
-                            MethodDeclaration md = (MethodDeclaration) member;
-                            methods.add(extractMethod(md, typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn));
+                    if (!(member instanceof FieldDeclaration)) continue;
+                    FieldDeclaration fd = (FieldDeclaration) member;
+                    JVisibility fVis = visibilityOf(fd);
+                    boolean fStatic = fd.isStatic();
+                    boolean fFinal = fd.isFinal();
+                    List<JAnnotationUse> fAnns = AnnotationExtractor.extract(fd, ctx);
+                    for (VariableDeclarator var : fd.getVariables()) {
+                        String fType = TypeResolver.resolveTypeRef(var.getType(), ctx, nestedByOuter, nestedScopeChain, model, qn, "field '" + var.getNameAsString() + "'");
+                        TypeRef fTypeRef = TypeRefParser.parse(var.getType(), typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn, "field '" + var.getNameAsString() + "'");
+                        fields.add(new JField(var.getNameAsString(), fType, fTypeRef, fVis, fStatic, fFinal, fAnns));
+                        fieldTypeByName.put(var.getNameAsString(), fType);
+                    }
+                }
+
+                // Then collect constructors + methods (and optionally body-based dependencies)
+                for (BodyDeclaration<?> member : getMembers(td)) {
+                    if (member instanceof ConstructorDeclaration) {
+                        ConstructorDeclaration cd = (ConstructorDeclaration) member;
+                        methods.add(extractConstructor(cd, typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn));
+                        if (includeMethodBodyCallDependencies) {
+                            methodBodyDeps.addAll(MethodBodyDependencyExtractor.extract(cd, ctx, nestedByOuter, nestedScopeChain, model, qn, fieldTypeByName));
+                        }
+                    } else if (member instanceof MethodDeclaration) {
+                        MethodDeclaration md = (MethodDeclaration) member;
+                        methods.add(extractMethod(md, typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn));
+                        if (includeMethodBodyCallDependencies) {
+                            methodBodyDeps.addAll(MethodBodyDependencyExtractor.extract(md, ctx, nestedByOuter, nestedScopeChain, model, qn, fieldTypeByName));
                         }
                     }
+                }
+
+                List<String> sortedBodyDeps = includeMethodBodyCallDependencies
+                        ? MethodBodyDependencyExtractor.sortedNormalized(methodBodyDeps)
+                        : List.of();
 
         model.types.add(new JType(
                 pkg,
@@ -272,7 +312,8 @@ public final class JavaExtractor {
                 doc,
                 fields,
                 methods,
-                enumLiterals
+                enumLiterals,
+                sortedBodyDeps
         ));
     }
 

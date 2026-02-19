@@ -20,6 +20,9 @@ final class UmlBuildContext {
     final AssociationPolicy associationPolicy;
     final NestedTypesMode nestedTypesMode;
 
+    /** Whether to emit dependencies derived from method bodies (approx. call graph). */
+    final boolean includeMethodBodyCallDependencies;
+
     // Deterministic maps
     final Map<String, Package> packageByName = new HashMap<>();
     final Map<String, Classifier> classifierByQName = new HashMap<>();
@@ -28,11 +31,13 @@ final class UmlBuildContext {
                     UmlBuildStats stats,
                     MultiplicityResolver multiplicityResolver,
                     AssociationPolicy associationPolicy,
-                    NestedTypesMode nestedTypesMode) {
+                    NestedTypesMode nestedTypesMode,
+                    boolean includeMethodBodyCallDependencies) {
         this.model = model;
         this.stats = stats;
         this.multiplicityResolver = multiplicityResolver;
         this.associationPolicy = associationPolicy;
         this.nestedTypesMode = nestedTypesMode == null ? NestedTypesMode.UML : nestedTypesMode;
+        this.includeMethodBodyCallDependencies = includeMethodBodyCallDependencies;
     }
 }

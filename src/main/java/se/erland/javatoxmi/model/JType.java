@@ -53,6 +53,14 @@ public final class JType {
     public final List<JField> fields;
     public final List<JMethod> methods;
 
+    /**
+     * Conservative dependencies derived from method/constructor bodies.
+     *
+     * <p>These are stored as qualified type names (when resolvable) and are intended to be
+     * emitted as UML Dependencies when enabled via CLI flag.</p>
+     */
+    public final List<String> methodBodyTypeDependencies;
+
     /** Enum literal names in declaration order. Only applicable when {@link #kind} is {@link JTypeKind#ENUM}. */
     public final List<String> enumLiterals;
 
@@ -72,7 +80,7 @@ public final class JType {
                  List<JMethod> methods,
                  List<String> enumLiterals) {
         this(packageName, name, qualifiedName, outerQualifiedName, kind, visibility, isAbstract, isStatic, isFinal,
-                extendsType, implementsTypes, annotations, null, fields, methods, enumLiterals);
+                extendsType, implementsTypes, annotations, null, fields, methods, enumLiterals, null);
     }
 
     public JType(String packageName,
@@ -91,6 +99,27 @@ public final class JType {
                  List<JField> fields,
                  List<JMethod> methods,
                  List<String> enumLiterals) {
+        this(packageName, name, qualifiedName, outerQualifiedName, kind, visibility, isAbstract, isStatic, isFinal,
+                extendsType, implementsTypes, annotations, doc, fields, methods, enumLiterals, null);
+    }
+
+    public JType(String packageName,
+                 String name,
+                 String qualifiedName,
+                 String outerQualifiedName,
+                 JTypeKind kind,
+                 JVisibility visibility,
+                 boolean isAbstract,
+                 boolean isStatic,
+                 boolean isFinal,
+                 String extendsType,
+                 List<String> implementsTypes,
+                 List<JAnnotationUse> annotations,
+                 String doc,
+                 List<JField> fields,
+                 List<JMethod> methods,
+                 List<String> enumLiterals,
+                 List<String> methodBodyTypeDependencies) {
         this.packageName = Objects.requireNonNullElse(packageName, "");
         this.name = Objects.requireNonNullElse(name, "");
         this.qualifiedName = Objects.requireNonNullElse(qualifiedName, this.name);
@@ -112,6 +141,7 @@ public final class JType {
         this.fields = fields == null ? new ArrayList<>() : new ArrayList<>(fields);
         this.methods = methods == null ? new ArrayList<>() : new ArrayList<>(methods);
         this.enumLiterals = enumLiterals == null ? new ArrayList<>() : new ArrayList<>(enumLiterals);
+        this.methodBodyTypeDependencies = methodBodyTypeDependencies == null ? new ArrayList<>() : new ArrayList<>(methodBodyTypeDependencies);
     }
 
     /**

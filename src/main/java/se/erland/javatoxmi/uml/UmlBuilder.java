@@ -78,6 +78,21 @@ public final class UmlBuilder {
                         boolean includeStereotypes,
                         AssociationPolicy associationPolicy,
                         NestedTypesMode nestedTypesMode) {
+        return build(jModel, modelName, includeStereotypes, associationPolicy, nestedTypesMode, false);
+    }
+
+    /**
+     * Build UML model.
+     *
+     * @param includeMethodBodyCallDependencies when true, emits additional conservative dependencies derived from
+     *                                         method/constructor bodies (approximate call graph).
+     */
+    public Result build(JModel jModel,
+                        String modelName,
+                        boolean includeStereotypes,
+                        AssociationPolicy associationPolicy,
+                        NestedTypesMode nestedTypesMode,
+                        boolean includeMethodBodyCallDependencies) {
         Objects.requireNonNull(jModel, "jModel");
         if (modelName == null || modelName.isBlank()) modelName = "JavaModel";
         AssociationPolicy ap = associationPolicy == null ? AssociationPolicy.RESOLVED : associationPolicy;
@@ -93,7 +108,7 @@ public final class UmlBuilder {
         model.setName(modelName);
         UmlBuilderSupport.annotateId(model, "Model:" + modelName);
 
-        UmlBuildContext ctx = new UmlBuildContext(model, stats, multiplicityResolver, ap, ntm);
+        UmlBuildContext ctx = new UmlBuildContext(model, stats, multiplicityResolver, ap, ntm, includeMethodBodyCallDependencies);
 
         UmlClassifierBuilder classifierBuilder = new UmlClassifierBuilder();
         UmlFeatureBuilder featureBuilder = new UmlFeatureBuilder(classifierBuilder);
@@ -175,6 +190,9 @@ public final class UmlBuilder {
             if (c == null) continue;
             associationBuilder.addFieldAssociations(ctx, c, t);
             dependencyBuilder.addMethodSignatureDependencies(ctx, c, t);
+            if (ctx.includeMethodBodyCallDependencies) {
+                dependencyBuilder.addMethodBodyDependencies(ctx, c, t);
+            }
         }
 
         // Profile + stereotypes
