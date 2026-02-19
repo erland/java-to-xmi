@@ -64,6 +64,9 @@ public final class ReportGenerator {
         report.append("- Generalizations: **").append(umlStats.generalizationsCreated).append("**\n");
         report.append("- Interface realizations: **").append(umlStats.interfaceRealizationsCreated).append("**\n");
         report.append("- Associations: **").append(umlStats.associationsCreated).append("**\n");
+        if (umlStats.associationMerges > 0) {
+            report.append("  - merged bidirectional JPA associations: **").append(umlStats.associationMerges).append("**\n");
+        }
         report.append("- Dependencies: **").append(umlStats.dependenciesCreated).append("**\n");
         report.append("- External stubs: **").append(umlStats.externalStubsCreated).append("**\n\n");
 

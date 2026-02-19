@@ -3,6 +3,7 @@ package se.erland.javatoxmi.uml;
 import org.eclipse.uml2.uml.Classifier;
 import org.eclipse.uml2.uml.Model;
 import org.eclipse.uml2.uml.Package;
+import se.erland.javatoxmi.model.JType;
 
 import java.util.IdentityHashMap;
 import java.util.HashMap;
@@ -36,11 +37,17 @@ final class UmlBuildContext {
     final Map<String, Package> packageByName = new HashMap<>();
     final Map<String, Classifier> classifierByQName = new HashMap<>();
 
+    /** Java model types by qualified name (used for safe association merging heuristics). */
+    final Map<String, JType> typeByQName = new HashMap<>();
+
     /** Reverse lookup used for deterministic pair keys and suppression of duplicate dependencies. */
     final Map<Classifier, String> qNameByClassifier = new IdentityHashMap<>();
 
     /** Undirected association pairs, stored as "<min>|<max>" by qualified name. */
     final Set<String> associationPairs = new HashSet<>();
+
+    /** Candidate associations between type pairs, used to safely merge bidirectional JPA relationships. */
+    final Map<String, java.util.List<AssocMergeRecord>> associationRecordsByPair = new HashMap<>();
 
     UmlBuildContext(Model model,
                     UmlBuildStats stats,

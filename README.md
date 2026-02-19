@@ -50,6 +50,7 @@ Source selection:
 
 Model shaping:
 - `--associations <none|jpa|resolved|smart>` control when fields become association lines (vs attribute-only)
+  - for common **bidirectional JPA** mappings, the tool may merge the two field-derived associations into a **single UML association** when it is safe and unambiguous (e.g. `mappedBy` or a unique inverse relationship)
 - `--nested-types <uml|uml+import|flatten>` control nested/member type exposure
   - `uml` keeps true nested containment
   - `uml+import` additionally mirrors nested types into the package namespace via imports (for consumers that struggle with nested lookup)

@@ -139,6 +139,12 @@ public final class UmlBuilder {
         List<JType> types = new ArrayList<>(jModel.types);
         types.sort(Comparator.comparing(t -> t.qualifiedName));
 
+        // Index Java types for later safe association merge heuristics.
+        for (JType t : types) {
+            if (t == null || t.qualifiedName == null || t.qualifiedName.isBlank()) continue;
+            ctx.typeByQName.put(t.qualifiedName, t);
+        }
+
         if (ntm == NestedTypesMode.FLATTEN) {
             // Backwards-compat: treat everything as package-owned.
             for (JType t : types) {

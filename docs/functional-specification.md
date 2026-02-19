@@ -86,6 +86,15 @@ Association emission is policy-driven:
 - `resolved`: create associations when the referenced type can be resolved within the model
 - `smart`: best-effort heuristic combining resolution + common collection patterns
 
+For common **bidirectional JPA** mappings, the generator may merge two field-derived associations into a
+**single UML association** when it is safe and unambiguous:
+
+- If one side declares `mappedBy`, the inverse end is matched by name.
+- Otherwise, the association is merged only when there is a **unique** inverse relationship field on each side.
+
+If there is any ambiguity (e.g. multiple candidate inverse fields such as `customer` and `originalCustomer`),
+the generator keeps separate associations.
+
 ### 5.8 Dependencies
 The tool can emit UML `Dependency` edges for relationships that are useful for navigation and analysis.
 
