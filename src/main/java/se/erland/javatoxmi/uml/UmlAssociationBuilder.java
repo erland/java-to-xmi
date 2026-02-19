@@ -87,6 +87,24 @@ final class UmlAssociationBuilder {
             endToSource.setUpper(opp.upper == MultiplicityResolver.STAR ? -1 : opp.upper);
             endToSource.setAggregation(AggregationKind.NONE_LITERAL);
 
+            // Navigability:
+            // - The end owned by the source classifier (endToTarget) is navigable from source -> target.
+            // - The opposite end owned by the association (endToSource) should be non-navigable by default.
+            //   This matches unidirectional JPA mappings where only the source side is modeled.
+            //   (Bidirectional navigation is achieved when the other class has its own field/property.
+            //   That field becomes a classifier-owned end and is therefore navigable.)
+            //
+            // Some UML tools treat association-owned ends as navigable unless navigableOwnedEnd is empty.
+            // UML2 exposes navigableOwnedEnd as a subset of ownedEnd; we clear it to indicate that
+            // association-owned ends are not navigable.
+            try {
+                assoc.getNavigableOwnedEnds().clear();
+            } catch (Exception ignored) {
+                // In older UML2 versions navigableOwnedEnd can be derived/immutable.
+                // Ownership still expresses intent: classifier-owned ends are navigable;
+                // association-owned ends are treated as non-navigable by most tools.
+            }
+
             if (!assoc.getMemberEnds().contains(endToTarget)) assoc.getMemberEnds().add(endToTarget);
             if (!assoc.getMemberEnds().contains(endToSource)) assoc.getMemberEnds().add(endToSource);
 
