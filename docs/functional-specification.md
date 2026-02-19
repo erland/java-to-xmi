@@ -69,7 +69,11 @@ Nested/member types are preserved and can be exposed in three modes:
 - Java methods map to UML `Operation`s with `Parameter`s.
 - Return types become a return `Parameter` (`direction=return`).
 - Visibility and common modifiers are preserved (`static`, `abstract`, etc.).
-- Constructors are represented as operations without a return parameter.
+- By default, simple property accessors are suppressed when a corresponding field exists:
+  - `getX()` / `setX(T)` and boolean `isX()` for field `x`
+  - can be enabled with `--include-accessors true`
+- By default, constructors are suppressed to reduce noise.
+  - can be enabled with `--include-constructors true`
 
 ### 5.6 Inheritance and realization
 - `extends` relationships map to UML `Generalization`.
@@ -96,7 +100,8 @@ The tool can emit UML `Dependency` edges for relationships that are useful for n
      - invocation-derived dependencies are tagged with `kind=invocation`
 
 To reduce diagram noise, when dependencies are enabled the tool suppresses dependencies that duplicate an
-existing **Association** between the same two classifiers.
+existing **Association** between the same two classifiers. Multiple dependency findings between the same
+two classifiers are merged into a single UML `Dependency`.
 
 ## 6. Annotations and stereotypes
 Java type-level annotations can be represented as:
@@ -123,6 +128,8 @@ Options:
 - `--associations <mode>`: `none | jpa | resolved | smart` (default: `resolved`)
 - `--nested-types <mode>`: `uml | uml+import | flatten` (default: `uml`)
 - `--deps <true|false>`: Emit dependency edges (signatures + conservative call graph) (default: `false`)
+- `--include-accessors <true|false>`: Include getter/setter operations when a corresponding field exists (default: `false`)
+- `--include-constructors <true|false>`: Include constructors as operations (default: `false`)
 - `--no-stereotypes`: Skip JavaAnnotations profile and do not emit stereotype applications
 - `--fail-on-unresolved <true|false>`: Exit with code 3 if unresolved types remain (default: `false`)
 - `-h, --help`: Show help

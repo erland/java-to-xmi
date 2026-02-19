@@ -78,7 +78,8 @@ public final class UmlBuilder {
                         boolean includeStereotypes,
                         AssociationPolicy associationPolicy,
                         NestedTypesMode nestedTypesMode) {
-        return build(jModel, modelName, includeStereotypes, associationPolicy, nestedTypesMode, false);
+        return build(jModel, modelName, includeStereotypes, associationPolicy, nestedTypesMode,
+                false, false, false);
     }
 
     /**
@@ -93,7 +94,9 @@ public final class UmlBuilder {
                         boolean includeStereotypes,
                         AssociationPolicy associationPolicy,
                         NestedTypesMode nestedTypesMode,
-                        boolean includeDependencies) {
+                        boolean includeDependencies,
+                        boolean includeAccessors,
+                        boolean includeConstructors) {
         Objects.requireNonNull(jModel, "jModel");
         if (modelName == null || modelName.isBlank()) modelName = "JavaModel";
         AssociationPolicy ap = associationPolicy == null ? AssociationPolicy.RESOLVED : associationPolicy;
@@ -109,7 +112,8 @@ public final class UmlBuilder {
         model.setName(modelName);
         UmlBuilderSupport.annotateId(model, "Model:" + modelName);
 
-        UmlBuildContext ctx = new UmlBuildContext(model, stats, multiplicityResolver, ap, ntm, includeDependencies);
+        UmlBuildContext ctx = new UmlBuildContext(model, stats, multiplicityResolver, ap, ntm,
+                includeDependencies, includeAccessors, includeConstructors);
 
         UmlClassifierBuilder classifierBuilder = new UmlClassifierBuilder();
         UmlFeatureBuilder featureBuilder = new UmlFeatureBuilder(classifierBuilder);

@@ -117,7 +117,9 @@ public final class Main {
                     !parsed.noStereotypes,
                     parsed.associationPolicy,
                     parsed.nestedTypesMode,
-                    parsed.deps
+                    parsed.deps,
+                    parsed.includeAccessors,
+                    parsed.includeConstructors
             );
         } catch (RuntimeException ex) {
             System.err.println("Error: UML build failed.");
@@ -224,6 +226,11 @@ public final class Main {
         // Defaults to false to keep diagrams clean (associations already capture most structural links).
         boolean deps = false;
 
+        // Operations (methods/constructors) emission controls.
+        // Defaults to false to keep diagrams cleaner.
+        boolean includeAccessors = false;
+        boolean includeConstructors = false;
+
         // Step 2 flags
         boolean includeTests = false;
         final List<String> excludes = new ArrayList<>();
@@ -278,6 +285,12 @@ public final class Main {
                         break;
                     case "--deps":
                         out.deps = parseBoolean(requireValue(args, ++i, "--deps"), "--deps");
+                        break;
+                    case "--include-accessors":
+                        out.includeAccessors = parseBoolean(requireValue(args, ++i, "--include-accessors"), "--include-accessors");
+                        break;
+                    case "--include-constructors":
+                        out.includeConstructors = parseBoolean(requireValue(args, ++i, "--include-constructors"), "--include-constructors");
                         break;
                     default:
                         if (a.startsWith("--")) {
@@ -342,7 +355,12 @@ public final class Main {
                     "                         uml | uml+import | flatten (default: uml)\n" +
                     "  --deps <bool>          Emit dependency relationships (method signatures + conservative call graph).\n" +
                     "                         Default: false. When enabled, dependencies that duplicate existing\n" +
-                    "                         associations are suppressed to reduce noise.\n" +
+                    "                         associations are suppressed, and multiple findings between the same\n" +
+                    "                         two classifiers are merged into a single dependency.\n" +
+                    "  --include-accessors <bool>  Include getter/setter operations when a corresponding field exists.\n" +
+                    "                         Default: false (getters/setters are suppressed when a field exists).\n" +
+                    "  --include-constructors <bool> Include constructors as operations.\n" +
+                    "                         Default: false.\n" +
                     "  -h, --help             Show help\n" +
                     "\n" +
                     "Examples:\n" +

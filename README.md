@@ -59,6 +59,12 @@ Dependencies:
 - `--deps <true|false>` emit UML `Dependency` edges (default: `false`)
   - when enabled, dependencies are derived from **method signatures** and conservatively from **method bodies** (approx. call graph)
   - dependencies that duplicate an existing **Association** between the same two classifiers are suppressed (reduces noise)
+  - multiple dependency findings between the same two classifiers are merged into a single UML `Dependency`
+
+Operations:
+- `--include-accessors <true|false>` include getter/setter operations when a corresponding field exists (default: `false`)
+  - by default, `getX()/setX()` (and `isX()` for booleans) are suppressed when there is a matching field `x`
+- `--include-constructors <true|false>` include constructors as UML operations (default: `false`)
 
 Quality gates:
 - `--fail-on-unresolved <true|false>` exit with code `3` if unknown types remain

@@ -26,6 +26,12 @@ final class UmlBuildContext {
     /** Whether to emit dependency relationships (signature + conservative call graph). */
     final boolean includeDependencies;
 
+    /** Whether to include getter/setter operations when a corresponding field exists. */
+    final boolean includeAccessors;
+
+    /** Whether to include constructors as operations. */
+    final boolean includeConstructors;
+
     // Deterministic maps
     final Map<String, Package> packageByName = new HashMap<>();
     final Map<String, Classifier> classifierByQName = new HashMap<>();
@@ -41,13 +47,17 @@ final class UmlBuildContext {
                     MultiplicityResolver multiplicityResolver,
                     AssociationPolicy associationPolicy,
                     NestedTypesMode nestedTypesMode,
-                    boolean includeDependencies) {
+                    boolean includeDependencies,
+                    boolean includeAccessors,
+                    boolean includeConstructors) {
         this.model = model;
         this.stats = stats;
         this.multiplicityResolver = multiplicityResolver;
         this.associationPolicy = associationPolicy;
         this.nestedTypesMode = nestedTypesMode == null ? NestedTypesMode.UML : nestedTypesMode;
         this.includeDependencies = includeDependencies;
+        this.includeAccessors = includeAccessors;
+        this.includeConstructors = includeConstructors;
     }
 
     String qNameOf(Classifier c) {

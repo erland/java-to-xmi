@@ -17,7 +17,10 @@ import se.erland.javatoxmi.model.JParam;
 import se.erland.javatoxmi.model.JType;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * Step 3: Add attributes + operations + parameters.
@@ -80,9 +83,23 @@ final class UmlFeatureBuilder {
         }
 
         // Methods -> Operations
+        Set<String> fieldNames = new HashSet<>();
+        for (JField f : t.fields) {
+            if (f != null && f.name != null && !f.name.isBlank()) {
+                fieldNames.add(f.name);
+            }
+        }
+
         List<JMethod> methods = new ArrayList<>(t.methods);
         methods.sort((a, b) -> UmlBuilderSupport.signatureKey(a).compareTo(UmlBuilderSupport.signatureKey(b)));
         for (JMethod m : methods) {
+            if (!ctx.includeConstructors && m.isConstructor) {
+                continue;
+            }
+            if (!ctx.includeAccessors && isAccessorForExistingField(m, fieldNames)) {
+                continue;
+            }
+
             Operation op;
             if (classifier instanceof Class) {
                 op = ((Class) classifier).createOwnedOperation(m.name, null, null);
@@ -116,5 +133,42 @@ final class UmlFeatureBuilder {
                 UmlBuilderSupport.annotateJavaTypeIfGeneric(retParam, m.returnType);
             }
         }
+    }
+
+    private static boolean isAccessorForExistingField(JMethod m, Set<String> fieldNames) {
+        if (m == null || m.name == null) return false;
+        if (fieldNames == null || fieldNames.isEmpty()) return false;
+        if (m.isConstructor) return false;
+
+        String n = m.name;
+        // Getter: getX() : T
+        if (n.startsWith("get") && n.length() > 3 && (m.params == null || m.params.isEmpty())) {
+            String field = decapitalize(n.substring(3));
+            return fieldNames.contains(field);
+        }
+        // Boolean getter: isX() : boolean/Boolean
+        if (n.startsWith("is") && n.length() > 2 && (m.params == null || m.params.isEmpty())) {
+            String rt = m.returnType == null ? "" : m.returnType.trim();
+            if (rt.equals("boolean") || rt.equals("java.lang.Boolean") || rt.equals("Boolean")) {
+                String field = decapitalize(n.substring(2));
+                return fieldNames.contains(field);
+            }
+        }
+        // Setter: setX(T)
+        if (n.startsWith("set") && n.length() > 3 && m.params != null && m.params.size() == 1) {
+            String field = decapitalize(n.substring(3));
+            return fieldNames.contains(field);
+        }
+        return false;
+    }
+
+    private static String decapitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        if (s.length() == 1) return s.toLowerCase(Locale.ROOT);
+        char c0 = s.charAt(0);
+        char c1 = s.charAt(1);
+        // Keep acronyms: URL -> URL
+        if (Character.isUpperCase(c0) && Character.isUpperCase(c1)) return s;
+        return Character.toLowerCase(c0) + s.substring(1);
     }
 }
