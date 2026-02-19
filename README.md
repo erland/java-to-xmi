@@ -2,8 +2,8 @@
 
 Convert a Java source tree into a UML model and export it as **XMI**.
 
-This project is optimized for importing into your React modeller PWA, while keeping the output
-reasonably compatible with UML tools.
+This project is optimized for importing into your React Modeller PWA, while keeping the output
+reasonably compatible with other UML tools.
 
 ## Build
 
@@ -20,6 +20,8 @@ Produces:
 
 ## Run
 
+Show CLI help:
+
 ```bash
 java -jar target/java-to-xmi.jar --help
 ```
@@ -30,9 +32,40 @@ Run on the included sample project:
 java -jar target/java-to-xmi.jar --source samples/mini --output out
 ```
 
-Outputs:
+Outputs (by default):
 - `out/model.xmi`
 - `out/report.md`
+
+### Output naming
+
+- `--output` can be either an **output folder** or a direct **`.xmi` file path**.
+- Use `--name <ModelName>` to control the UML model name (otherwise derived from the source folder).
+
+### Key CLI options
+
+Source selection:
+- `--exclude <glob>` (repeatable) exclude paths relative to `--source`
+  - also supports `--exclude=<glob>`
+- `--include-tests` include common test folders (default: excluded)
+
+Model shaping:
+- `--associations <none|jpa|resolved|smart>` control when fields become association lines (vs attribute-only)
+- `--nested-types <uml|uml+import|flatten>` control nested/member type exposure
+  - `uml` keeps true nested containment
+  - `uml+import` additionally mirrors nested types into the package namespace via imports (for consumers that struggle with nested lookup)
+  - `flatten` places nested types in the package as top-level types (lossy but widely compatible)
+
+Dependencies:
+- `--call-deps [bool]` add conservative **method-body call dependencies** (approx. call graph) as UML `Dependency` edges
+  - default: `false`
+  - enable with `--call-deps` (or `--call-deps true`)
+  - disable with `--call-deps false`
+
+Quality gates:
+- `--fail-on-unresolved <true|false>` exit with code `3` if unknown types remain
+
+Reporting:
+- `--report <path>` write the report markdown to a specific location (default: `<output>/report.md`)
 
 ## Stereotypes / annotations
 
@@ -49,15 +82,8 @@ If you want legacy output without any annotation profile or stereotype applicati
 java -jar target/java-to-xmi.jar --source ... --no-stereotypes
 ```
 
-## Key CLI options
+## More details
 
-- `--exclude <glob>` (repeatable) exclude paths relative to `--source`
-- `--include-tests` include common test folders
-- `--fail-on-unresolved <true|false>` exit with code 3 if unknown types remain
-- `--no-stereotypes` skip the JavaAnnotations profile + stereotype output
-- `--associations <none|jpa|resolved|smart>` control when fields become association lines (vs attribute-only)
-
-More details:
 - `docs/functional-specification.md`
 - `docs/backwards-compatibility.md`
 - `docs/associations.md`
