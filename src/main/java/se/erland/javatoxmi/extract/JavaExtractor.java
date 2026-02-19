@@ -51,10 +51,11 @@ public final class JavaExtractor {
     /**
      * Extract Java model.
      *
-     * @param includeMethodBodyCallDependencies when true, extracts additional conservative dependencies
-     *                                         from method/constructor bodies (approximate call graph).
+     * @param includeDependencies when true, extracts additional conservative dependencies
+     *                            from method/constructor bodies (approximate call graph). These are only
+     *                            emitted to XMI if dependency output is enabled.
      */
-    public JModel extract(Path sourceRoot, List<Path> javaFiles, boolean includeMethodBodyCallDependencies) {
+    public JModel extract(Path sourceRoot, List<Path> javaFiles, boolean includeDependencies) {
         JModel model = new JModel(sourceRoot, javaFiles);
 
         // 1) Parse all compilation units (collect parse errors but continue)
@@ -100,7 +101,7 @@ public final class JavaExtractor {
 
             for (TypeDeclaration<?> td : u.cu.getTypes()) {
                 if (!isSupportedType(td)) continue;
-                extractTypeRecursive(model, ctx, nestedByOuter, pkg, td, null, null, List.of(), includeMethodBodyCallDependencies);
+                extractTypeRecursive(model, ctx, nestedByOuter, pkg, td, null, null, List.of(), includeDependencies);
             }
         }
 
@@ -145,7 +146,7 @@ public final class JavaExtractor {
                                              String outerQn,
                                              String outerPathFromTop,
                                              List<String> enclosingScopeChain,
-                                             boolean includeMethodBodyCallDependencies) {
+                                             boolean includeDependencies) {
         String name = td.getNameAsString();
         String pathFromTop = (outerPathFromTop == null || outerPathFromTop.isBlank())
                 ? name
@@ -157,14 +158,14 @@ public final class JavaExtractor {
         List<String> scopeChain = new ArrayList<>(enclosingScopeChain);
         scopeChain.add(qn);
 
-        extractOneType(model, ctx, nestedByOuter, scopeChain, pkg, td, outerQn, outerPathFromTop, includeMethodBodyCallDependencies);
+        extractOneType(model, ctx, nestedByOuter, scopeChain, pkg, td, outerQn, outerPathFromTop, includeDependencies);
 
         // Recurse into nested member types
         for (BodyDeclaration<?> member : getMembers(td)) {
             if (!(member instanceof TypeDeclaration)) continue;
             TypeDeclaration<?> child = (TypeDeclaration<?>) member;
             if (!isSupportedType(child)) continue;
-            extractTypeRecursive(model, ctx, nestedByOuter, pkg, child, qn, pathFromTop, scopeChain, includeMethodBodyCallDependencies);
+            extractTypeRecursive(model, ctx, nestedByOuter, pkg, child, qn, pathFromTop, scopeChain, includeDependencies);
         }
     }
 
@@ -197,7 +198,7 @@ public final class JavaExtractor {
                                        TypeDeclaration<?> td,
                                        String outerQn,
                                        String outerSimpleName,
-                                       boolean includeMethodBodyCallDependencies) {
+                                       boolean includeDependencies) {
         JTypeKind kind = kindOf(td);
         JVisibility vis = visibilityOf(td);
         boolean isAbstract = hasModifier(td, Modifier.Keyword.ABSTRACT);
@@ -249,7 +250,7 @@ public final class JavaExtractor {
                 Map<String, String> fieldTypeByName = new HashMap<>();
                 List<JMethod> methods = new ArrayList<>();
                 List<String> enumLiterals = new ArrayList<>();
-                Set<String> methodBodyDeps = includeMethodBodyCallDependencies ? new HashSet<>() : Collections.emptySet();
+                Set<String> methodBodyDeps = includeDependencies ? new HashSet<>() : Collections.emptySet();
 
                 // Enum literals
                 if (td instanceof EnumDeclaration) {
@@ -280,13 +281,13 @@ public final class JavaExtractor {
                     if (member instanceof ConstructorDeclaration) {
                         ConstructorDeclaration cd = (ConstructorDeclaration) member;
                         methods.add(extractConstructor(cd, typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn));
-                        if (includeMethodBodyCallDependencies) {
+                        if (includeDependencies) {
                             methodBodyDeps.addAll(MethodBodyDependencyExtractor.extract(cd, ctx, nestedByOuter, nestedScopeChain, model, qn, fieldTypeByName));
                         }
                     } else if (member instanceof MethodDeclaration) {
                         MethodDeclaration md = (MethodDeclaration) member;
                         methods.add(extractMethod(md, typeParams, ctx, nestedByOuter, nestedScopeChain, model, qn));
-                        if (includeMethodBodyCallDependencies) {
+                        if (includeDependencies) {
                             methodBodyDeps.addAll(MethodBodyDependencyExtractor.extract(md, ctx, nestedByOuter, nestedScopeChain, model, qn, fieldTypeByName));
                         }
                     }
@@ -297,7 +298,7 @@ public final class JavaExtractor {
                 // can treat them the same way as field access.
                 propagateJpaRelationshipAnnotationsFromGettersToFields(fields, methods);
 
-                List<String> sortedBodyDeps = includeMethodBodyCallDependencies
+                List<String> sortedBodyDeps = includeDependencies
                         ? MethodBodyDependencyExtractor.sortedNormalized(methodBodyDeps)
                         : List.of();
 

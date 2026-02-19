@@ -83,19 +83,20 @@ Association emission is policy-driven:
 - `smart`: best-effort heuristic combining resolution + common collection patterns
 
 ### 5.8 Dependencies
-The tool emits UML `Dependency` edges for structural relationships that are useful for navigation and analysis.
+The tool can emit UML `Dependency` edges for relationships that are useful for navigation and analysis.
 
-1) **Signature dependencies (always on)**  
-   - derived from method parameter and return types
-
-2) **Method-body call dependencies (optional)**  
-   - enabled via `--call-deps`  
-   - conservative AST-based extraction (approx. call graph), including:
+- Dependency output is controlled by `--deps <true|false>` (default: `false`).
+- When enabled, the tool emits:
+  1) **Signature dependencies** derived from method parameter and return types.
+  2) **Method-body call dependencies** derived conservatively from method/constructor bodies (approx. call graph), including:
      - `new Type(...)`
      - `var.method()` where `var` is a typed local/parameter
      - `Type.staticCall()` where `Type` resolves as a type in scope/imports
      - `this.field.method()` when the field type is known
-   - emitted as UML `Dependency` edges tagged as invocation-derived
+     - invocation-derived dependencies are tagged with `kind=invocation`
+
+To reduce diagram noise, when dependencies are enabled the tool suppresses dependencies that duplicate an
+existing **Association** between the same two classifiers.
 
 ## 6. Annotations and stereotypes
 Java type-level annotations can be represented as:
@@ -121,8 +122,7 @@ Options:
 - `--include-tests`: Include common test folders (default: excluded)
 - `--associations <mode>`: `none | jpa | resolved | smart` (default: `resolved`)
 - `--nested-types <mode>`: `uml | uml+import | flatten` (default: `uml`)
-- `--call-deps [bool]`: Enable/disable method-body call dependencies (default: `false`)  
-  - `--call-deps` enables, `--call-deps false` disables explicitly
+- `--deps <true|false>`: Emit dependency edges (signatures + conservative call graph) (default: `false`)
 - `--no-stereotypes`: Skip JavaAnnotations profile and do not emit stereotype applications
 - `--fail-on-unresolved <true|false>`: Exit with code 3 if unresolved types remain (default: `false`)
 - `-h, --help`: Show help
@@ -134,8 +134,8 @@ Options:
   - `java -jar target/java-to-xmi.jar --source . --exclude "**/generated/**" --exclude "**/*Test.java"`
 - More tool-friendly nested types:
   - `java -jar target/java-to-xmi.jar --source . --nested-types uml+import`
-- Include conservative call dependencies:
-  - `java -jar target/java-to-xmi.jar --source . --call-deps`
+- Include dependencies (signature + conservative call graph):
+  - `java -jar target/java-to-xmi.jar --source . --deps true`
 
 ### 7.3 Exit codes
 - `0` success
@@ -160,5 +160,5 @@ Options:
 5. When external types are missing:
    - unresolved references are recorded in the report
    - exit code follows `--fail-on-unresolved` behavior.
-6. When `--call-deps` is enabled:
-   - additional dependency edges appear in the model, without affecting determinism.
+6. When `--deps true` is used:
+   - dependency edges (signature + conservative call graph) appear in the model, without affecting determinism.

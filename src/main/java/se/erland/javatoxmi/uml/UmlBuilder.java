@@ -84,15 +84,16 @@ public final class UmlBuilder {
     /**
      * Build UML model.
      *
-     * @param includeMethodBodyCallDependencies when true, emits additional conservative dependencies derived from
-     *                                         method/constructor bodies (approximate call graph).
+     * @param includeDependencies when true, emits dependency relationships derived from method signatures
+     *                            and conservatively from method/constructor bodies (approximate call graph).
+     *                            Dependencies that duplicate existing associations are suppressed.
      */
     public Result build(JModel jModel,
                         String modelName,
                         boolean includeStereotypes,
                         AssociationPolicy associationPolicy,
                         NestedTypesMode nestedTypesMode,
-                        boolean includeMethodBodyCallDependencies) {
+                        boolean includeDependencies) {
         Objects.requireNonNull(jModel, "jModel");
         if (modelName == null || modelName.isBlank()) modelName = "JavaModel";
         AssociationPolicy ap = associationPolicy == null ? AssociationPolicy.RESOLVED : associationPolicy;
@@ -108,7 +109,7 @@ public final class UmlBuilder {
         model.setName(modelName);
         UmlBuilderSupport.annotateId(model, "Model:" + modelName);
 
-        UmlBuildContext ctx = new UmlBuildContext(model, stats, multiplicityResolver, ap, ntm, includeMethodBodyCallDependencies);
+        UmlBuildContext ctx = new UmlBuildContext(model, stats, multiplicityResolver, ap, ntm, includeDependencies);
 
         UmlClassifierBuilder classifierBuilder = new UmlClassifierBuilder();
         UmlFeatureBuilder featureBuilder = new UmlFeatureBuilder(classifierBuilder);
@@ -189,8 +190,8 @@ public final class UmlBuilder {
             Classifier c = ctx.classifierByQName.get(t.qualifiedName);
             if (c == null) continue;
             associationBuilder.addFieldAssociations(ctx, c, t);
-            dependencyBuilder.addMethodSignatureDependencies(ctx, c, t);
-            if (ctx.includeMethodBodyCallDependencies) {
+            if (ctx.includeDependencies) {
+                dependencyBuilder.addMethodSignatureDependencies(ctx, c, t);
                 dependencyBuilder.addMethodBodyDependencies(ctx, c, t);
             }
         }

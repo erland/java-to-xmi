@@ -36,12 +36,7 @@ final class UmlDependencyBuilder {
         List<String> sorted = new ArrayList<>(deps);
         Collections.sort(sorted);
         for (String depType : sorted) {
-            Classifier target = ctx.classifierByQName.get(depType);
-            if (target == null) continue;
-            if (target == classifier) continue;
-            Dependency d = classifier.createDependency((NamedElement) target);
-            ctx.stats.dependenciesCreated++;
-            UmlBuilderSupport.annotateId(d, "Dependency:" + t.qualifiedName + "->" + depType);
+            upsertDependency(ctx, classifier, t.qualifiedName, depType, "signature");
         }
     }
 
@@ -49,17 +44,56 @@ final class UmlDependencyBuilder {
         if (ctx == null || classifier == null || t == null) return;
         if (t.methodBodyTypeDependencies == null || t.methodBodyTypeDependencies.isEmpty()) return;
 
-        List<String> deps = new ArrayList<>(t.methodBodyTypeDependencies);
-        Collections.sort(deps);
-        for (String depTypeRaw : deps) {
-            String depType = UmlAssociationBuilder.stripGenerics(depTypeRaw);
-            Classifier target = ctx.classifierByQName.get(depType);
-            if (target == null) continue;
-            if (target == classifier) continue;
-            Dependency d = classifier.createDependency((NamedElement) target);
-            ctx.stats.dependenciesCreated++;
-            UmlBuilderSupport.annotateId(d, "DependencyCall:" + t.qualifiedName + "->" + depType);
-            UmlBuilderSupport.annotateTags(d, Map.of("kind", "invocation"));
+        // De-duplicate by normalized target type so we never create multiple Dependency edges
+        // between the same two classifiers (even if discovered multiple times).
+        Set<String> deps = new HashSet<>();
+        for (String depTypeRaw : t.methodBodyTypeDependencies) {
+            if (depTypeRaw == null || depTypeRaw.isBlank()) continue;
+            deps.add(UmlAssociationBuilder.stripGenerics(depTypeRaw));
         }
+
+        List<String> sorted = new ArrayList<>(deps);
+        Collections.sort(sorted);
+        for (String depType : sorted) {
+            upsertDependency(ctx, classifier, t.qualifiedName, depType, "invocation");
+        }
+    }
+
+    private static void upsertDependency(UmlBuildContext ctx,
+                                        Classifier from,
+                                        String fromQName,
+                                        String toQName,
+                                        String kind) {
+        if (ctx == null || from == null) return;
+        if (toQName == null || toQName.isBlank()) return;
+
+        Classifier target = ctx.classifierByQName.get(toQName);
+        if (target == null) return;
+        if (target == from) return;
+        if (ctx.hasAssociationBetween(from, target)) return;
+
+        Dependency existing = findExistingDependency(from, target);
+        if (existing == null) {
+            Dependency d = from.createDependency((NamedElement) target);
+            ctx.stats.dependenciesCreated++;
+            // One deterministic edge per (from,to) pair.
+            UmlBuilderSupport.annotateId(d, "Dependency:" + fromQName + "->" + toQName);
+            // Preserve what kind(s) of evidence produced this dependency.
+            UmlBuilderSupport.annotateTags(d, Map.of("dep." + kind, "true"));
+        } else {
+            // Ensure the dependency carries evidence tags without creating duplicates.
+            UmlBuilderSupport.annotateTags(existing, Map.of("dep." + kind, "true"));
+        }
+    }
+
+    private static Dependency findExistingDependency(Classifier from, Classifier target) {
+        if (from == null || target == null) return null;
+        for (Dependency d : from.getClientDependencies()) {
+            if (d == null) continue;
+            for (NamedElement sup : d.getSuppliers()) {
+                if (sup == target) return d;
+            }
+        }
+        return null;
     }
 }

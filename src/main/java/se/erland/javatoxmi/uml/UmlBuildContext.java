@@ -4,8 +4,11 @@ import org.eclipse.uml2.uml.Classifier;
 import org.eclipse.uml2.uml.Model;
 import org.eclipse.uml2.uml.Package;
 
+import java.util.IdentityHashMap;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Shared mutable state for a single {@link UmlBuilder} build.
@@ -20,24 +23,48 @@ final class UmlBuildContext {
     final AssociationPolicy associationPolicy;
     final NestedTypesMode nestedTypesMode;
 
-    /** Whether to emit dependencies derived from method bodies (approx. call graph). */
-    final boolean includeMethodBodyCallDependencies;
+    /** Whether to emit dependency relationships (signature + conservative call graph). */
+    final boolean includeDependencies;
 
     // Deterministic maps
     final Map<String, Package> packageByName = new HashMap<>();
     final Map<String, Classifier> classifierByQName = new HashMap<>();
+
+    /** Reverse lookup used for deterministic pair keys and suppression of duplicate dependencies. */
+    final Map<Classifier, String> qNameByClassifier = new IdentityHashMap<>();
+
+    /** Undirected association pairs, stored as "<min>|<max>" by qualified name. */
+    final Set<String> associationPairs = new HashSet<>();
 
     UmlBuildContext(Model model,
                     UmlBuildStats stats,
                     MultiplicityResolver multiplicityResolver,
                     AssociationPolicy associationPolicy,
                     NestedTypesMode nestedTypesMode,
-                    boolean includeMethodBodyCallDependencies) {
+                    boolean includeDependencies) {
         this.model = model;
         this.stats = stats;
         this.multiplicityResolver = multiplicityResolver;
         this.associationPolicy = associationPolicy;
         this.nestedTypesMode = nestedTypesMode == null ? NestedTypesMode.UML : nestedTypesMode;
-        this.includeMethodBodyCallDependencies = includeMethodBodyCallDependencies;
+        this.includeDependencies = includeDependencies;
+    }
+
+    String qNameOf(Classifier c) {
+        if (c == null) return null;
+        return qNameByClassifier.get(c);
+    }
+
+    static String undirectedPairKey(String a, String b) {
+        if (a == null || b == null) return null;
+        return (a.compareTo(b) <= 0) ? (a + "|" + b) : (b + "|" + a);
+    }
+
+    boolean hasAssociationBetween(Classifier a, Classifier b) {
+        String qa = qNameOf(a);
+        String qb = qNameOf(b);
+        if (qa == null || qb == null) return false;
+        String key = undirectedPairKey(qa, qb);
+        return key != null && associationPairs.contains(key);
     }
 }

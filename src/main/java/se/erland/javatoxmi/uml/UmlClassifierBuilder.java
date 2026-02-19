@@ -102,6 +102,7 @@ final class UmlClassifierBuilder {
         ctx.stats.classifiersCreated++;
         UmlBuilderSupport.annotateId(classifier, "Classifier:" + t.qualifiedName);
         ctx.classifierByQName.put(t.qualifiedName, classifier);
+        ctx.qNameByClassifier.put(classifier, t.qualifiedName);
 
         // Type-level JavaDoc -> UML owned comment (owned by the element)
         if (t.doc != null && !t.doc.isBlank() && classifier instanceof NamedElement) {

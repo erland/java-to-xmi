@@ -94,6 +94,11 @@ final class UmlAssociationBuilder {
             String assocKey = "Association:" + t.qualifiedName + "#" + f.name + "->" + at.targetRef + ":" + multiplicityKey(at);
             UmlBuilderSupport.annotateId(assoc, assocKey);
 
+            // Record the association pair so dependency creation can suppress duplicates.
+            String tgtQn = ctx.qNameOf(target);
+            String pairKey = UmlBuildContext.undirectedPairKey(t.qualifiedName, tgtQn);
+            if (pairKey != null) ctx.associationPairs.add(pairKey);
+
             UmlBuilderSupport.annotateTags(assoc, relationDecisionTags(f, ctx.associationPolicy, true));
             UmlBuilderSupport.annotateTags(assoc, aggregationDecisionTags(f));
         }

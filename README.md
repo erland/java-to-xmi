@@ -56,10 +56,9 @@ Model shaping:
   - `flatten` places nested types in the package as top-level types (lossy but widely compatible)
 
 Dependencies:
-- `--call-deps [bool]` add conservative **method-body call dependencies** (approx. call graph) as UML `Dependency` edges
-  - default: `false`
-  - enable with `--call-deps` (or `--call-deps true`)
-  - disable with `--call-deps false`
+- `--deps <true|false>` emit UML `Dependency` edges (default: `false`)
+  - when enabled, dependencies are derived from **method signatures** and conservatively from **method bodies** (approx. call graph)
+  - dependencies that duplicate an existing **Association** between the same two classifiers are suppressed (reduces noise)
 
 Quality gates:
 - `--fail-on-unresolved <true|false>` exit with code `3` if unknown types remain
