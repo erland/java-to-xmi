@@ -80,8 +80,11 @@ final class UmlAssociationBuilder {
             ownerPkg.getPackagedElements().add(assoc);
 
             Property endToSource = assoc.createOwnedEnd(null, (Type) classifier);
-            endToSource.setLower(0);
-            endToSource.setUpper(1);
+            // By default, UML2 creates a conservative 0..1 opposite end. For JPA relationships we can
+            // improve the opposite multiplicity even for unidirectional mappings.
+            Multiplicity opp = oppositeMultiplicityFromJpa(f);
+            endToSource.setLower(opp.lower);
+            endToSource.setUpper(opp.upper == MultiplicityResolver.STAR ? -1 : opp.upper);
             endToSource.setAggregation(AggregationKind.NONE_LITERAL);
 
             if (!assoc.getMemberEnds().contains(endToTarget)) assoc.getMemberEnds().add(endToTarget);
@@ -94,6 +97,64 @@ final class UmlAssociationBuilder {
             UmlBuilderSupport.annotateTags(assoc, relationDecisionTags(f, ctx.associationPolicy, true));
             UmlBuilderSupport.annotateTags(assoc, aggregationDecisionTags(f));
         }
+    }
+
+    private static final class Multiplicity {
+        final int lower;
+        final int upper; // use MultiplicityResolver.STAR for *
+
+        Multiplicity(int lower, int upper) {
+            this.lower = lower;
+            this.upper = upper;
+        }
+    }
+
+    /**
+     * Derive the opposite association-end multiplicity from JPA relationship annotations.
+     *
+     * This is intentionally conservative and works even when the mapping is unidirectional.
+     *
+     * Examples:
+     * - @ManyToOne  => opposite is 0..*
+     * - @OneToMany  => opposite is 0..1
+     * - @ManyToMany => opposite is 0..*
+     * - @OneToOne   => opposite is 0..1
+     */
+    private static Multiplicity oppositeMultiplicityFromJpa(JField f) {
+        if (f == null || f.annotations == null || f.annotations.isEmpty()) {
+            return new Multiplicity(0, 1);
+        }
+
+        boolean manyToOne = false;
+        boolean oneToMany = false;
+        boolean manyToMany = false;
+        boolean oneToOne = false;
+
+        for (se.erland.javatoxmi.model.JAnnotationUse a : f.annotations) {
+            if (a == null) continue;
+            String n = a.qualifiedName != null && !a.qualifiedName.isBlank() ? a.qualifiedName : a.simpleName;
+            n = AnnotationValueUtil.stripPkg(n);
+            if ("ManyToOne".equals(n)) manyToOne = true;
+            else if ("OneToMany".equals(n)) oneToMany = true;
+            else if ("ManyToMany".equals(n)) manyToMany = true;
+            else if ("OneToOne".equals(n)) oneToOne = true;
+        }
+
+        // Highest specificity first
+        if (manyToOne) {
+            return new Multiplicity(0, MultiplicityResolver.STAR);
+        }
+        if (oneToMany) {
+            return new Multiplicity(0, 1);
+        }
+        if (manyToMany) {
+            return new Multiplicity(0, MultiplicityResolver.STAR);
+        }
+        if (oneToOne) {
+            return new Multiplicity(0, 1);
+        }
+
+        return new Multiplicity(0, 1);
     }
 
     // -------------------- association target selection --------------------
