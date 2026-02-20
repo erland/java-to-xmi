@@ -32,6 +32,13 @@ import java.util.List;
 public final class Main {
 
     public static void main(String[] args) {
+        System.exit(run(args));
+    }
+
+    /**
+     * Testable entrypoint that returns an exit code instead of calling System.exit.
+     */
+    public static int run(String[] args) {
         CliArgs parsed;
         try {
             parsed = CliArgs.parse(args);
@@ -39,34 +46,30 @@ public final class Main {
             System.err.println("Error: " + ex.getMessage());
             System.err.println();
             CliArgs.printHelp();
-            System.exit(1); // invalid arguments
-            return;
-        }
+            return 1;
+}
 
         if (parsed.help) {
             CliArgs.printHelp();
-            return;
+            return 0;
         }
 
         if (parsed.source == null) {
             System.err.println("Error: --source is required.");
             System.err.println();
             CliArgs.printHelp();
-            System.exit(1);
-            return;
-        }
+            return 1;
+}
 
         final Path sourcePath = Paths.get(parsed.source).toAbsolutePath().normalize();
         if (!Files.exists(sourcePath)) {
             System.err.println("Error: --source does not exist: " + sourcePath);
-            System.exit(1);
-            return;
-        }
+            return 1;
+}
         if (!Files.isDirectory(sourcePath)) {
             System.err.println("Error: --source must be a directory: " + sourcePath);
-            System.exit(1);
-            return;
-        }
+            return 1;
+}
 
         // Resolve output paths
         final String modelName = (parsed.name != null && !parsed.name.isBlank())
@@ -82,9 +85,8 @@ public final class Main {
         } catch (IOException e) {
             System.err.println("Error: could not create output directory.");
             System.err.println(e.getMessage());
-            System.exit(2);
-            return;
-        }
+            return 2;
+}
 
         // Step 2: deterministic source scanning
         final List<Path> javaFiles;
@@ -93,9 +95,8 @@ public final class Main {
         } catch (IOException e) {
             System.err.println("Error: could not scan source directory: " + sourcePath);
             System.err.println(e.getMessage());
-            System.exit(2);
-            return;
-        }
+            return 2;
+}
 
         // Step 3: parse + extract Java semantic model
         final JModel jModel;
@@ -104,9 +105,8 @@ public final class Main {
         } catch (RuntimeException ex) {
             System.err.println("Error: extraction failed.");
             System.err.println(ex.getMessage());
-            System.exit(2);
-            return;
-        }
+            return 2;
+}
 
         // Step 4: build UML object graph
         final UmlBuilder.Result umlResult;
@@ -124,9 +124,8 @@ public final class Main {
         } catch (RuntimeException ex) {
             System.err.println("Error: UML build failed.");
             System.err.println(ex.getMessage());
-            System.exit(2);
-            return;
-        }
+            return 2;
+}
 
         // Step 5: XMI export
         try {
@@ -138,9 +137,8 @@ public final class Main {
         } catch (IOException e) {
             System.err.println("Error: could not write XMI to: " + xmiOut);
             System.err.println(e.getMessage());
-            System.exit(2);
-            return;
-        }
+            return 2;
+}
 
         // Step 6: report generation
         try {
@@ -159,17 +157,15 @@ public final class Main {
         } catch (IOException e) {
             System.err.println("Error: could not write report to: " + reportOut);
             System.err.println(e.getMessage());
-            System.exit(2);
-            return;
-        }
+            return 2;
+}
 
         // Exit code rules
         if (parsed.failOnUnresolved && !jModel.unresolvedTypes.isEmpty()) {
             System.err.println("Unresolved (unknown) types present (" + jModel.unresolvedTypes.size() + ") and --fail-on-unresolved is set.");
             System.err.println("See report: " + reportOut);
-            System.exit(3);
-            return;
-        }
+            return 3;
+}
 
         System.out.println(
                 "java-to-xmi\n" +
@@ -182,7 +178,7 @@ public final class Main {
                 "- External refs (stubbed): " + jModel.externalTypeRefs.size() + "\n" +
                 "- Unresolved (unknown): " + jModel.unresolvedTypes.size()
         );
-        System.exit(0);
+        return 0;
     }
 
     private static Path resolveXmiOutput(String outputArg, Path sourcePath) {
