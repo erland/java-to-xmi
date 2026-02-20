@@ -12,15 +12,30 @@ import static org.junit.jupiter.api.Assertions.*;
 public class RelationHeuristicsTest {
 
     @Test
-    void jpaEmbeddedAndElementCollection_forceAttributeOnly() {
+    void jpaEmbeddedAndElementCollection_createCompositionWhenResolvable() {
         JAnnotationUse embedded = new JAnnotationUse("Embedded", "jakarta.persistence.Embedded", Map.of());
         JField f1 = new JField("addr", "Address", null, JVisibility.PRIVATE, false, false, List.of(embedded));
-        assertFalse(RelationHeuristics.shouldCreateAssociation(f1, dummyOwner(), AssociationPolicy.JPA_ONLY, true));
-        assertFalse(RelationHeuristics.shouldCreateAssociation(f1, dummyOwner(), AssociationPolicy.RESOLVED, true));
+        assertTrue(RelationHeuristics.shouldCreateAssociation(f1, dummyOwner(), AssociationPolicy.JPA_ONLY, true));
+        assertTrue(RelationHeuristics.shouldCreateAssociation(f1, dummyOwner(), AssociationPolicy.RESOLVED, true));
 
         JAnnotationUse ec = new JAnnotationUse("ElementCollection", "jakarta.persistence.ElementCollection", Map.of());
-        JField f2 = new JField("tags", "List<String>", null, JVisibility.PRIVATE, false, false, List.of(ec));
-        assertFalse(RelationHeuristics.shouldCreateAssociation(f2, dummyOwner(), AssociationPolicy.SMART, true));
+        // Element collection of embeddable type should become a relationship when resolvable.
+        JField f2 = new JField("prev", "List<Address>", null, JVisibility.PRIVATE, false, false, List.of(ec));
+        assertTrue(RelationHeuristics.shouldCreateAssociation(f2, dummyOwner(), AssociationPolicy.SMART, true));
+
+        // Element collection of value-like types should remain attribute-only.
+        TypeRef tr = TypeRef.param("List", "List", "java.util.List", List.of(TypeRef.simple("String", "String", "java.lang.String")));
+        JField f3 = new JField("tags", "List<String>", tr, JVisibility.PRIVATE, false, false, List.of(ec));
+        assertFalse(RelationHeuristics.shouldCreateAssociation(f3, dummyOwner(), AssociationPolicy.SMART, false));
+    }
+
+    @Test
+    void transient_neverCreatesAssociation() {
+        JAnnotationUse tr = new JAnnotationUse("Transient", "jakarta.persistence.Transient", Map.of());
+        JField f = new JField("tmp", "Address", null, JVisibility.PRIVATE, false, false, List.of(tr));
+        assertFalse(RelationHeuristics.shouldCreateAssociation(f, dummyOwner(), AssociationPolicy.RESOLVED, true));
+        assertFalse(RelationHeuristics.shouldCreateAssociation(f, dummyOwner(), AssociationPolicy.JPA_ONLY, true));
+        assertFalse(RelationHeuristics.shouldCreateAssociation(f, dummyOwner(), AssociationPolicy.SMART, true));
     }
 
     @Test

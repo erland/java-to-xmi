@@ -1,7 +1,7 @@
 package se.erland.javatoxmi.uml;
 
+import org.eclipse.uml2.uml.AggregationKind;
 import org.eclipse.uml2.uml.Association;
-import org.eclipse.uml2.uml.Classifier;
 import org.eclipse.uml2.uml.Element;
 import org.eclipse.uml2.uml.Model;
 import org.eclipse.uml2.uml.Package;
@@ -17,6 +17,12 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Historical test name kept for compatibility when users unzip over an existing working copy.
+ *
+ * Behavior changed: @Embedded and @ElementCollection(of embeddable) now produce composition associations.
+ * Element collections of basic types remain attribute-only, and @Transient fields do not produce associations.
+ */
 public class UmlBuilderEmbeddedElementCollectionAttributeOnlyTest {
 
     @Test
@@ -25,40 +31,24 @@ public class UmlBuilderEmbeddedElementCollectionAttributeOnlyTest {
         var files = SourceScanner.scan(source, List.of(), false);
         JModel jModel = new JavaExtractor().extract(source, files);
 
-        // RESOLVED policy would normally create associations for resolved classifier field types.
         Model model = new UmlBuilder().build(jModel, "MiniModel", true, AssociationPolicy.RESOLVED).umlModel;
 
-        Classifier customer = findClassifierByName(model, "Customer");
-        Classifier address = findClassifierByName(model, "Address");
-        assertNotNull(customer);
-        assertNotNull(address);
+        Property addressEnd = findAssociationEndByName(model, "address");
+        assertNotNull(addressEnd, "Expected Customer.address (@Embedded) to create an association end");
+        assertEquals(AggregationKind.COMPOSITE_LITERAL, addressEnd.getAggregation(), "@Embedded should be composition");
 
-        // Customer.address is @Embedded Address; Customer.previousAddresses is @ElementCollection List<Address>
-        // Neither should produce an association line to Address.
-        assertFalse(hasAssociationBetween(model, customer, address), "Did not expect Customer-Address association for Embedded/ElementCollection");
+        Property prevEnd = findAssociationEndByName(model, "previousAddresses");
+        assertNotNull(prevEnd, "Expected Customer.previousAddresses (@ElementCollection Address) to create an association end");
+        assertEquals(AggregationKind.COMPOSITE_LITERAL, prevEnd.getAggregation(), "@ElementCollection of embeddable should be composition");
+
+        assertNull(findAssociationEndByName(model, "tags"), "Did not expect an association for element collection of basic types");
+        assertNull(findAssociationEndByName(model, "runtimeOnly"), "Did not expect an association for transient fields");
     }
 
-    private static boolean hasAssociationBetween(Package pkg, Classifier a, Classifier b) {
+    private static Property findAssociationEndByName(Package pkg, String name) {
         for (Association assoc : collectAssociations(pkg)) {
-            List<Property> ends = assoc.getMemberEnds();
-            if (ends.size() != 2) continue;
-            var t1 = ends.get(0).getType();
-            var t2 = ends.get(1).getType();
-            if (t1 == a && t2 == b) return true;
-            if (t1 == b && t2 == a) return true;
-        }
-        return false;
-    }
-
-    private static Classifier findClassifierByName(Package pkg, String name) {
-        for (Element e : pkg.getOwnedElements()) {
-            if (e instanceof Classifier) {
-                Classifier c = (Classifier) e;
-                if (name.equals(c.getName())) return c;
-            }
-            if (e instanceof Package) {
-                Classifier c = findClassifierByName((Package) e, name);
-                if (c != null) return c;
+            for (Property end : assoc.getMemberEnds()) {
+                if (name.equals(end.getName())) return end;
             }
         }
         return null;

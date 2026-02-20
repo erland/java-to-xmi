@@ -3,6 +3,7 @@ package com.example.jpademo;
 import com.example.jpademo.annotations.ElementCollection;
 import com.example.jpademo.annotations.Embedded;
 import com.example.jpademo.annotations.OneToMany;
+import com.example.jpademo.annotations.Transient;
 import com.example.jpademo.validation.NotNull;
 import com.example.jpademo.validation.Size;
 
@@ -26,4 +27,8 @@ public class Customer {
 
     @ElementCollection
     private List<String> tags;
+
+    // Non-persistent helper field: should not become an association line.
+    @Transient
+    private Address runtimeOnly;
 }

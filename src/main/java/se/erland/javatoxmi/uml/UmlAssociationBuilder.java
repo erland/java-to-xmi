@@ -99,11 +99,22 @@ final class UmlAssociationBuilder {
             // Prefer mappedBy (when present) since that is the canonical inverse role name in JPA.
             String oppositeName = deriveOppositeEndName(f, t);
             Property endToSource = assoc.createOwnedEnd(oppositeName, (Type) classifier);
-            // By default, UML2 creates a conservative 0..1 opposite end. For JPA relationships we can
-            // improve the opposite multiplicity even for unidirectional mappings.
-            Multiplicity opp = oppositeMultiplicityFromJpa(f);
-            endToSource.setLower(opp.lower);
-            endToSource.setUpper(opp.upper == MultiplicityResolver.STAR ? -1 : opp.upper);
+            // By default, UML2 creates a conservative 0..1 opposite end.
+            //
+            // For "value object" containment (Embedded/EmbeddedId/ElementCollection-of-embeddable),
+            // the contained instance conceptually has exactly one owner. Represent that as 1..1 on
+            // the owner side (the opposite end typed by the owning entity/class).
+            //
+            // For other JPA relationships we can still improve the opposite multiplicity even for
+            // unidirectional mappings, based on the relationship annotation.
+            if (RelationHeuristics.isEmbedded(f) || RelationHeuristics.isEmbeddedId(f) || RelationHeuristics.isElementCollection(f)) {
+                endToSource.setLower(1);
+                endToSource.setUpper(1);
+            } else {
+                Multiplicity opp = oppositeMultiplicityFromJpa(f);
+                endToSource.setLower(opp.lower);
+                endToSource.setUpper(opp.upper == MultiplicityResolver.STAR ? -1 : opp.upper);
+            }
             endToSource.setAggregation(AggregationKind.NONE_LITERAL);
 
             // Navigability (unidirectional by default; bidirectional is achieved by merging when safe).
@@ -499,8 +510,15 @@ final class UmlAssociationBuilder {
         if (f == null) return Map.of();
         if (policy == null) policy = AssociationPolicy.RESOLVED;
 
+        if (RelationHeuristics.isTransient(f)) {
+            return Map.of("relationSource", "transient", "persistent", "false");
+        }
+
         if (RelationHeuristics.isEmbedded(f)) {
             return Map.of("relationSource", "embedded");
+        }
+        if (RelationHeuristics.isEmbeddedId(f)) {
+            return Map.of("relationSource", "embeddedId");
         }
         if (RelationHeuristics.isElementCollection(f)) {
             return Map.of("relationSource", "elementCollection");
