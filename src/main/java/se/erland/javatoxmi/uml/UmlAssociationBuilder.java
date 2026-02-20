@@ -14,7 +14,6 @@ import se.erland.javatoxmi.model.TypeRef;
 import se.erland.javatoxmi.model.TypeRefKind;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,7 +62,12 @@ final class UmlAssociationBuilder {
 
         // Try merge BEFORE creating a new association.
         if (isJpaRel && srcQn != null && tgtQn != null) {
-            if (tryMergeIntoExistingAssociation(ctx, srcQn, tgtQn, classifier, target, ownerType, field, at, endToTarget)) {
+            JpaAssociationMerger merger = new JpaAssociationMerger(
+                    ctx,
+                    f -> computeAssociationTarget(ctx, f),
+                    ref -> resolveLocalClassifier(ctx, ref)
+            );
+            if (merger.tryMergeIntoExistingAssociation(srcQn, tgtQn, classifier, target, ownerType, field, at, endToTarget)) {
                 return; // merged
             }
         }
@@ -81,7 +85,7 @@ final class UmlAssociationBuilder {
         if (owned == null) return;
 
         UmlBuilderSupport.annotateTags(owned, relationDecisionTags(field, ctx.associationPolicy, resolvedTarget));
-        UmlBuilderSupport.annotateTags(owned, aggregationDecisionTags(field));
+        UmlBuilderSupport.annotateTags(owned, RelationTagging.aggregationDecisionTags(field));
     }
 
     private Property ensureEndToTarget(StructuredClassifier sc, JType ownerType, JField field, Type targetType) {
@@ -109,7 +113,7 @@ final class UmlAssociationBuilder {
 
         UmlBuilderSupport.annotateTags(endToTarget, at.tags);
         UmlBuilderSupport.annotateTags(endToTarget, relationDecisionTags(field, ctx.associationPolicy, true));
-        UmlBuilderSupport.annotateTags(endToTarget, aggregationDecisionTags(field));
+        UmlBuilderSupport.annotateTags(endToTarget, RelationTagging.aggregationDecisionTags(field));
     }
 
     private void createNewAssociation(UmlBuildContext ctx,
@@ -150,327 +154,27 @@ final class UmlAssociationBuilder {
         if (pairKey != null) ctx.associationPairs.add(pairKey);
 
         UmlBuilderSupport.annotateTags(assoc, relationDecisionTags(field, ctx.associationPolicy, true));
-        UmlBuilderSupport.annotateTags(assoc, aggregationDecisionTags(field));
+        UmlBuilderSupport.annotateTags(assoc, RelationTagging.aggregationDecisionTags(field));
 
         // Index for potential later merge.
         if (isJpaRel && pairKey != null) {
-            String mappedBy = mappedByValue(field);
+            String mappedBy = JpaOppositeEndRules.mappedByValue(field);
             AssocMergeRecord rec = new AssocMergeRecord(assoc, srcQn, field.name, tgtQn, mappedBy, endToTarget);
             ctx.associationRecordsByPair.computeIfAbsent(pairKey, k -> new ArrayList<>()).add(rec);
         }
     }
 
     private Property createOppositeEnd(Association assoc, Classifier classifier, JField field, JType ownerType) {
-        String oppositeName = deriveOppositeEndName(field, ownerType);
+        String oppositeName = JpaOppositeEndRules.deriveOppositeEndName(field, ownerType);
         Property endToSource = assoc.createOwnedEnd(oppositeName, (Type) classifier);
         endToSource.setAggregation(AggregationKind.NONE_LITERAL);
         return endToSource;
     }
 
     private void configureOppositeEndMultiplicity(Property endToSource, JField field) {
-        if (endToSource == null) return;
-        if (RelationHeuristics.isEmbedded(field) || RelationHeuristics.isEmbeddedId(field) || RelationHeuristics.isElementCollection(field)) {
-            endToSource.setLower(1);
-            endToSource.setUpper(1);
-            return;
-        }
-        Multiplicity opp = oppositeMultiplicityFromJpa(field);
-        endToSource.setLower(opp.lower);
-        endToSource.setUpper(opp.upper == MultiplicityResolver.STAR ? -1 : opp.upper);
+        JpaOppositeEndRules.configureOppositeEndMultiplicity(endToSource, field);
     }
 
-    /**
-
-    /**
-     * Merge policy:
-     * 1) If mappedBy is present on one side, only merge with the exact inverse field name.
-     * 2) Else, merge only when both sides have a unique inverse relationship between the same pair.
-     */
-    private boolean tryMergeIntoExistingAssociation(UmlBuildContext ctx,
-                                                   String srcQn,
-                                                   String tgtQn,
-                                                   Classifier srcClassifier,
-                                                   Classifier tgtClassifier,
-                                                   JType srcType,
-                                                   JField srcField,
-                                                   AssociationTarget at,
-                                                   Property srcOwnedEnd) {
-        String pairKey = UmlBuildContext.undirectedPairKey(srcQn, tgtQn);
-        if (pairKey == null) return false;
-
-        List<AssocMergeRecord> records = ctx.associationRecordsByPair.get(pairKey);
-        if (records == null || records.isEmpty()) return false;
-
-        // 1) If current field matches a previously indexed mappedBy expectation: merge deterministically.
-        for (AssocMergeRecord r : records) {
-            if (r == null || r.association == null) continue;
-            if (r.expectedInverseFieldName == null || r.expectedInverseFieldName.isBlank()) continue;
-            // r.ownerQn --mappedBy--> r.targetQn, expects inverse field on r.targetQn
-            if (tgtQn.equals(r.ownerQn) && srcQn.equals(r.targetQn)) {
-                // This record was created from the opposite direction; not a mappedBy expectation for us.
-                continue;
-            }
-            if (srcQn.equals(r.targetQn) && tgtQn.equals(r.ownerQn)) {
-                // record: tgt owns end, expects inverse on src
-                // not our case
-                continue;
-            }
-            // record created from r.ownerQn side, expects inverse field name on r.targetQn.
-            if (tgtQn.equals(r.targetQn) && srcQn.equals(r.ownerQn) && r.expectedInverseFieldName.equals(srcField.name)) {
-                // Would mean mappedBy points to a field name on target equal to our current field name,
-                // but we are on source side. Not typical.
-                continue;
-            }
-            if (srcQn.equals(r.targetQn) && tgtQn.equals(r.ownerQn) && r.expectedInverseFieldName.equals(srcField.name)) {
-                // record expects inverse on src, but we are src. ignore.
-                continue;
-            }
-            if (srcQn.equals(r.targetQn) || tgtQn.equals(r.targetQn)) {
-                // handled below
-            }
-        }
-
-        // More direct: find record where its expected inverse matches this field on this owner.
-        for (AssocMergeRecord r : records) {
-            if (r == null || r.association == null) continue;
-            if (r.expectedInverseFieldName == null || r.expectedInverseFieldName.isBlank()) continue;
-            // r is owned by r.ownerQn, targets r.targetQn, expects inverse field on target.
-            if (srcQn.equals(r.targetQn) && tgtQn.equals(r.ownerQn)) {
-                // record is opposite direction; not expectation for us.
-                continue;
-            }
-            if (tgtQn.equals(r.targetQn) && srcQn.equals(r.ownerQn) && r.expectedInverseFieldName.equals(srcField.name)) {
-                // mappedBy expected inverse field on target, but current owner is source; ignore.
-                continue;
-            }
-            if (srcQn.equals(r.targetQn) && tgtQn.equals(r.ownerQn) && r.expectedInverseFieldName.equals(srcField.name)) {
-                continue;
-            }
-            if (srcQn.equals(r.targetQn) && r.ownerQn.equals(tgtQn) && r.expectedInverseFieldName.equals(srcField.name)) {
-                // record created from target side with mappedBy expecting field on source.
-                // we are source, so this is the expected inverse. Merge into r.association.
-                return mergeAssociation(ctx, r, srcClassifier, tgtClassifier, srcType, srcField, at, srcOwnedEnd);
-            }
-            if (tgtQn.equals(r.targetQn) && r.ownerQn.equals(srcQn) && r.expectedInverseFieldName.equals(srcField.name)) {
-                // record created from source side with mappedBy expecting field on target.
-                // we are source; not expected.
-                continue;
-            }
-        }
-
-        // 2) If current field itself uses mappedBy, try to merge into an already-created inverse association.
-        String mappedBy = mappedByValue(srcField);
-        if (mappedBy != null && !mappedBy.isBlank()) {
-            // mappedBy refers to a field on target pointing back to source.
-            for (AssocMergeRecord r : records) {
-                if (r == null || r.association == null) continue;
-                if (!tgtQn.equals(r.ownerQn)) continue;
-                if (!srcQn.equals(r.targetQn)) continue;
-                if (!mappedBy.equals(r.fieldName)) continue;
-                // We found an association created from target.<mappedBy> end. Merge into it.
-                return mergeAssociation(ctx, r, srcClassifier, tgtClassifier, srcType, srcField, at, srcOwnedEnd);
-            }
-            // No inverse created yet. We'll create a new association and index it with expected inverse.
-            return false;
-        }
-
-        // 3) Unique inverse heuristic (no mappedBy): merge only if it is unambiguous both ways.
-        if (!isUniqueInverseJpa(ctx, srcQn, tgtQn, srcType)) {
-            return false;
-        }
-
-        // Under uniqueness, we can merge into the single existing record that belongs to the other owner.
-        List<AssocMergeRecord> others = new ArrayList<>();
-        for (AssocMergeRecord r : records) {
-            if (r == null || r.association == null) continue;
-            if (!r.ownerQn.equals(srcQn)) others.add(r);
-        }
-        if (others.size() != 1) return false;
-        AssocMergeRecord r = others.get(0);
-        // Avoid merging twice into the same association for the same owner.
-        if (associationAlreadyHasOwnerEnd(r.association, srcClassifier)) return false;
-        return mergeAssociation(ctx, r, srcClassifier, tgtClassifier, srcType, srcField, at, srcOwnedEnd);
-    }
-
-    private static boolean associationAlreadyHasOwnerEnd(Association assoc, Classifier owner) {
-        if (assoc == null || owner == null) return false;
-        for (Property p : assoc.getMemberEnds()) {
-            if (p == null) continue;
-            if (p.getOwner() == owner) return true;
-        }
-        return false;
-    }
-
-    private boolean mergeAssociation(UmlBuildContext ctx,
-                                    AssocMergeRecord existing,
-                                    Classifier srcClassifier,
-                                    Classifier tgtClassifier,
-                                    JType srcType,
-                                    JField srcField,
-                                    AssociationTarget at,
-                                    Property srcOwnedEnd) {
-        if (existing == null || existing.association == null) return false;
-        Association assoc = existing.association;
-
-        // Ensure our owned end is connected to the existing association.
-        srcOwnedEnd.setAssociation(assoc);
-        if (!assoc.getMemberEnds().contains(srcOwnedEnd)) assoc.getMemberEnds().add(srcOwnedEnd);
-
-        // Remove the association-owned placeholder end.
-        //
-        // When we initially create an association from one side (e.g. Customer.orders -> Order),
-        // we create a synthetic opposite end owned by the Association and typed by the *owner* of
-        // that field (Customer). When we later merge the inverse field (Order.customer -> Customer),
-        // we must remove that synthetic end, otherwise the association ends up with 3 member ends.
-        //
-        // Therefore, remove association-owned ends typed by the *target* classifier of the field
-        // being merged (which is the original owner of the synthetic placeholder end).
-        List<Property> ownedEnds = new ArrayList<>(assoc.getOwnedEnds());
-        for (Property p : ownedEnds) {
-            if (p == null) continue;
-            if (p.getType() == tgtClassifier && p.getOwner() == assoc) {
-                assoc.getMemberEnds().remove(p);
-                assoc.getOwnedEnds().remove(p);
-            }
-        }
-
-        // Navigability: with both ends classifier-owned, we keep navigableOwnedEnds empty.
-        try {
-            assoc.getNavigableOwnedEnds().clear();
-        } catch (Exception ignored) {
-        }
-
-        // Update associationPairs (already present, but idempotent)
-        String pairKey = UmlBuildContext.undirectedPairKey(srcType.qualifiedName, ctx.qNameOf((Classifier) tgtClassifier));
-        if (pairKey != null) ctx.associationPairs.add(pairKey);
-
-        // Index this end as well (so later heuristics can detect ambiguity rather than accidentally merging).
-        if (pairKey != null) {
-            AssocMergeRecord rec = new AssocMergeRecord(assoc, srcType.qualifiedName, srcField.name,
-                    ctx.qNameOf((Classifier) tgtClassifier), null, srcOwnedEnd);
-            ctx.associationRecordsByPair.computeIfAbsent(pairKey, k -> new ArrayList<>()).add(rec);
-        }
-
-        ctx.stats.associationMerges++;
-        return true;
-    }
-
-    private boolean isUniqueInverseJpa(UmlBuildContext ctx, String srcQn, String tgtQn, JType srcType) {
-        if (ctx == null || srcType == null) return false;
-        JType tgtType = ctx.typeByQName.get(tgtQn);
-        if (tgtType == null) return false;
-
-        int srcCount = countJpaRelationshipFieldsTo(ctx, srcType, tgtQn);
-        if (srcCount != 1) return false;
-        int tgtCount = countJpaRelationshipFieldsTo(ctx, tgtType, srcQn);
-        return tgtCount == 1;
-    }
-
-    private int countJpaRelationshipFieldsTo(UmlBuildContext ctx, JType owner, String targetQn) {
-        if (owner == null || owner.fields == null) return 0;
-        int c = 0;
-        for (JField f : owner.fields) {
-            if (f == null) continue;
-            if (!RelationHeuristics.hasJpaRelationship(f)) continue;
-            AssociationTarget at = computeAssociationTarget(ctx, f);
-            if (at == null) continue;
-            Classifier t = resolveLocalClassifier(ctx, at.targetRef);
-            if (t == null) continue;
-            String qn = ctx.qNameOf(t);
-            if (targetQn.equals(qn)) c++;
-        }
-        return c;
-    }
-
-    private static String mappedByValue(JField f) {
-        if (f == null || f.annotations == null) return null;
-        for (se.erland.javatoxmi.model.JAnnotationUse a : f.annotations) {
-            if (a == null) continue;
-            String n = a.qualifiedName != null && !a.qualifiedName.isBlank() ? a.qualifiedName : a.simpleName;
-            n = AnnotationValueUtil.stripPkg(n);
-            if (!"OneToMany".equals(n) && !"ManyToMany".equals(n) && !"OneToOne".equals(n)) continue;
-            String mb = a.values == null ? null : a.values.get("mappedBy");
-            if (mb == null) continue;
-            mb = mb.trim();
-            if (mb.startsWith("\"") && mb.endsWith("\"") && mb.length() >= 2) {
-                mb = mb.substring(1, mb.length() - 1);
-            }
-            if (!mb.isBlank()) return mb;
-        }
-        return null;
-    }
-
-    /**
-     * Derive a reasonable role name for the opposite association end.
-     *
-     * <p>For JPA relationships, {@code mappedBy} is the best available canonical inverse role name.
-     * For non-bidirectional/unmapped associations we keep the opposite end unnamed to avoid
-     * surprising diffs and to preserve prior behavior (some tests and tools expect unnamed
-     * association-owned opposite ends for unidirectional owner-side mappings).</p>
-     */
-    private static String deriveOppositeEndName(JField srcField, JType srcType) {
-        String mb = mappedByValue(srcField);
-        if (mb != null && !mb.isBlank()) return mb;
-        return null;
-    }
-
-    private static final class Multiplicity {
-        final int lower;
-        final int upper; // use MultiplicityResolver.STAR for *
-
-        Multiplicity(int lower, int upper) {
-            this.lower = lower;
-            this.upper = upper;
-        }
-    }
-
-    /**
-     * Derive the opposite association-end multiplicity from JPA relationship annotations.
-     *
-     * This is intentionally conservative and works even when the mapping is unidirectional.
-     *
-     * Examples:
-     * - @ManyToOne  => opposite is 0..*
-     * - @OneToMany  => opposite is 0..1
-     * - @ManyToMany => opposite is 0..*
-     * - @OneToOne   => opposite is 0..1
-     */
-    private static Multiplicity oppositeMultiplicityFromJpa(JField f) {
-        if (f == null || f.annotations == null || f.annotations.isEmpty()) {
-            return new Multiplicity(0, 1);
-        }
-
-        boolean manyToOne = false;
-        boolean oneToMany = false;
-        boolean manyToMany = false;
-        boolean oneToOne = false;
-
-        for (se.erland.javatoxmi.model.JAnnotationUse a : f.annotations) {
-            if (a == null) continue;
-            String n = a.qualifiedName != null && !a.qualifiedName.isBlank() ? a.qualifiedName : a.simpleName;
-            n = AnnotationValueUtil.stripPkg(n);
-            if ("ManyToOne".equals(n)) manyToOne = true;
-            else if ("OneToMany".equals(n)) oneToMany = true;
-            else if ("ManyToMany".equals(n)) manyToMany = true;
-            else if ("OneToOne".equals(n)) oneToOne = true;
-        }
-
-        // Highest specificity first
-        if (manyToOne) {
-            return new Multiplicity(0, MultiplicityResolver.STAR);
-        }
-        if (oneToMany) {
-            return new Multiplicity(0, 1);
-        }
-        if (manyToMany) {
-            return new Multiplicity(0, MultiplicityResolver.STAR);
-        }
-        if (oneToOne) {
-            return new Multiplicity(0, 1);
-        }
-
-        return new Multiplicity(0, 1);
-    }
 
     // -------------------- association target selection --------------------
 
@@ -541,66 +245,7 @@ final class UmlAssociationBuilder {
     }
 
     private static Map<String, String> relationDecisionTags(JField f, AssociationPolicy policy, boolean resolvedTarget) {
-        if (f == null) return Map.of();
-        if (policy == null) policy = AssociationPolicy.RESOLVED;
-
-        if (RelationHeuristics.isTransient(f)) {
-            return Map.of("relationSource", "transient", "persistent", "false");
-        }
-
-        if (RelationHeuristics.isEmbedded(f)) {
-            return Map.of("relationSource", "embedded");
-        }
-        if (RelationHeuristics.isEmbeddedId(f)) {
-            return Map.of("relationSource", "embeddedId");
-        }
-        if (RelationHeuristics.isElementCollection(f)) {
-            return Map.of("relationSource", "elementCollection");
-        }
-
-        boolean hasJpa = RelationHeuristics.hasJpaRelationship(f);
-        if (hasJpa) {
-            return Map.of("relationSource", "jpa");
-        }
-
-        switch (policy) {
-            case NONE:
-                return Map.of("relationSource", "none");
-            case JPA_ONLY:
-                return Map.of("relationSource", "jpaOnly");
-            case SMART:
-                if (RelationHeuristics.isValueLike(f)) {
-                    return Map.of("relationSource", "valueBlacklist");
-                }
-                if (resolvedTarget) {
-                    return Map.of("relationSource", "resolved");
-                }
-                return Map.of("relationSource", "unresolved");
-            case RESOLVED:
-            default:
-                return Map.of("relationSource", resolvedTarget ? "resolved" : "unresolved");
-        }
-    }
-
-    private static Map<String, String> aggregationDecisionTags(JField f) {
-        if (f == null) return Map.of();
-        AggregationKind ak = RelationHeuristics.aggregationKindFor(f);
-        String agg = ak == AggregationKind.COMPOSITE_LITERAL ? "composite" : "none";
-        LinkedHashMap<String, String> tags = new LinkedHashMap<>();
-        tags.put("aggregation", agg);
-
-        if (f.annotations != null) {
-            for (se.erland.javatoxmi.model.JAnnotationUse a : f.annotations) {
-                if (a == null) continue;
-                if ("OneToMany".equals(a.simpleName) || "OneToOne".equals(a.simpleName)
-                        || "javax.persistence.OneToMany".equals(a.qualifiedName) || "jakarta.persistence.OneToMany".equals(a.qualifiedName)
-                        || "javax.persistence.OneToOne".equals(a.qualifiedName) || "jakarta.persistence.OneToOne".equals(a.qualifiedName)) {
-                    String v = a.values == null ? null : a.values.get("orphanRemoval");
-                    if (v != null) tags.put("jpaOrphanRemoval", v);
-                }
-            }
-        }
-        return Map.copyOf(tags);
+        return RelationTagging.relationDecisionTags(f, policy, resolvedTarget);
     }
 
     private static String pickAssociationTargetFromTypeRef(TypeRef t) {
