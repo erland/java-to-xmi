@@ -24,128 +24,162 @@ import java.util.Map;
  */
 final class UmlAssociationBuilder {
 
+    
     void addFieldAssociations(UmlBuildContext ctx, Classifier classifier, JType t) {
         if (ctx == null || classifier == null || t == null) return;
 
         for (JField f : t.fields) {
-            AssociationTarget at = computeAssociationTarget(ctx, f);
-            if (at == null) continue;
-
-            // Resolve the association target to an in-model classifier (if possible)
-            Classifier target = resolveLocalClassifier(ctx, at.targetRef);
-            boolean resolvedToClassifier = target != null && target != classifier;
-
-            // Decide whether to create an association line or keep attribute-only.
-            boolean createAssoc = RelationHeuristics.shouldCreateAssociation(f, t, ctx.associationPolicy, resolvedToClassifier);
-
-            // Always tag the owned field property with relation decision metadata (when present).
-            if (classifier instanceof StructuredClassifier) {
-                StructuredClassifier sc = (StructuredClassifier) classifier;
-                Property owned = findOwnedAttribute(sc, f.name);
-                if (owned != null) {
-                    UmlBuilderSupport.annotateTags(owned, relationDecisionTags(f, ctx.associationPolicy, resolvedToClassifier));
-                    UmlBuilderSupport.annotateTags(owned, aggregationDecisionTags(f));
-                }
-            }
-
-            if (!createAssoc) {
-                continue;
-            }
-
-            if (target == null) continue;
-            if (!(classifier instanceof StructuredClassifier) || !(target instanceof Type)) continue;
-
-            StructuredClassifier sc = (StructuredClassifier) classifier;
-            Property endToTarget = findOwnedAttribute(sc, f.name);
-            if (endToTarget == null) {
-                endToTarget = sc.createOwnedAttribute(f.name, (Type) target);
-                UmlBuilderSupport.annotateId(endToTarget, "Field:" + t.qualifiedName + "#" + f.name + ":" + f.type);
-                UmlBuilderSupport.setVisibility(endToTarget, f.visibility);
-            }
-
-            endToTarget.setType((Type) target);
-            endToTarget.setLower(at.lower);
-            endToTarget.setUpper(at.upper == MultiplicityResolver.STAR ? -1 : at.upper);
-            endToTarget.setAggregation(RelationHeuristics.aggregationKindFor(f));
-            UmlBuilderSupport.setVisibility(endToTarget, f.visibility);
-
-            UmlBuilderSupport.annotateTags(endToTarget, at.tags);
-            UmlBuilderSupport.annotateTags(endToTarget, relationDecisionTags(f, ctx.associationPolicy, true));
-            UmlBuilderSupport.annotateTags(endToTarget, aggregationDecisionTags(f));
-
-            // --- Safe JPA bidirectional merge policy ---
-            // Only attempt to merge associations for JPA relationship fields. For pure "resolved" associations
-            // (no JPA semantics) merging would be dangerous because multiple distinct roles can exist.
-            boolean isJpaRel = RelationHeuristics.hasJpaRelationship(f);
-            String srcQn = t.qualifiedName;
-            String tgtQn = ctx.qNameOf(target);
-
-            // Try merge BEFORE creating a new association.
-            if (isJpaRel && srcQn != null && tgtQn != null) {
-                if (tryMergeIntoExistingAssociation(ctx, srcQn, tgtQn, classifier, target, t, f, at, endToTarget)) {
-                    // merged; pair already exists and dependency suppression will work.
-                    continue;
-                }
-            }
-
-            Package ownerPkg = ((Type) classifier).getPackage();
-            if (ownerPkg == null) ownerPkg = classifier.getModel();
-
-            Association assoc = UMLFactory.eINSTANCE.createAssociation();
-            assoc.setName(null);
-            ownerPkg.getPackagedElements().add(assoc);
-
-            // Opposite end: name it for readability and for better round-tripping in tools.
-            // Prefer mappedBy (when present) since that is the canonical inverse role name in JPA.
-            String oppositeName = deriveOppositeEndName(f, t);
-            Property endToSource = assoc.createOwnedEnd(oppositeName, (Type) classifier);
-            // By default, UML2 creates a conservative 0..1 opposite end.
-            //
-            // For "value object" containment (Embedded/EmbeddedId/ElementCollection-of-embeddable),
-            // the contained instance conceptually has exactly one owner. Represent that as 1..1 on
-            // the owner side (the opposite end typed by the owning entity/class).
-            //
-            // For other JPA relationships we can still improve the opposite multiplicity even for
-            // unidirectional mappings, based on the relationship annotation.
-            if (RelationHeuristics.isEmbedded(f) || RelationHeuristics.isEmbeddedId(f) || RelationHeuristics.isElementCollection(f)) {
-                endToSource.setLower(1);
-                endToSource.setUpper(1);
-            } else {
-                Multiplicity opp = oppositeMultiplicityFromJpa(f);
-                endToSource.setLower(opp.lower);
-                endToSource.setUpper(opp.upper == MultiplicityResolver.STAR ? -1 : opp.upper);
-            }
-            endToSource.setAggregation(AggregationKind.NONE_LITERAL);
-
-            // Navigability (unidirectional by default; bidirectional is achieved by merging when safe).
-            try {
-                assoc.getNavigableOwnedEnds().clear();
-            } catch (Exception ignored) {
-                // see comment above
-            }
-
-            if (!assoc.getMemberEnds().contains(endToTarget)) assoc.getMemberEnds().add(endToTarget);
-            if (!assoc.getMemberEnds().contains(endToSource)) assoc.getMemberEnds().add(endToSource);
-
-            ctx.stats.associationsCreated++;
-            String assocKey = "Association:" + t.qualifiedName + "#" + f.name + "->" + at.targetRef + ":" + multiplicityKey(at);
-            UmlBuilderSupport.annotateId(assoc, assocKey);
-
-            // Record the association pair so dependency creation can suppress duplicates.
-            String pairKey = UmlBuildContext.undirectedPairKey(srcQn, tgtQn);
-            if (pairKey != null) ctx.associationPairs.add(pairKey);
-
-            UmlBuilderSupport.annotateTags(assoc, relationDecisionTags(f, ctx.associationPolicy, true));
-            UmlBuilderSupport.annotateTags(assoc, aggregationDecisionTags(f));
-
-            // Index for potential later merge.
-            if (isJpaRel && pairKey != null) {
-                String mappedBy = mappedByValue(f);
-                AssocMergeRecord rec = new AssocMergeRecord(assoc, srcQn, f.name, tgtQn, mappedBy, endToTarget);
-                ctx.associationRecordsByPair.computeIfAbsent(pairKey, k -> new ArrayList<>()).add(rec);
-            }
+            if (f == null) continue;
+            addFieldAssociation(ctx, classifier, t, f);
         }
     }
+
+    private void addFieldAssociation(UmlBuildContext ctx, Classifier classifier, JType ownerType, JField field) {
+        AssociationTarget at = computeAssociationTarget(ctx, field);
+        if (at == null) return;
+
+        Classifier target = resolveLocalClassifier(ctx, at.targetRef);
+        boolean resolvedToClassifier = target != null && target != classifier;
+
+        // Decide whether to create an association line or keep attribute-only.
+        boolean createAssoc = RelationHeuristics.shouldCreateAssociation(field, ownerType, ctx.associationPolicy, resolvedToClassifier);
+
+        // Always tag the owned field property with relation decision metadata (when present).
+        annotateOwnedAttributeDecision(ctx, classifier, field, resolvedToClassifier);
+
+        if (!createAssoc) return;
+        if (target == null) return;
+        if (!(classifier instanceof StructuredClassifier) || !(target instanceof Type)) return;
+
+        StructuredClassifier sc = (StructuredClassifier) classifier;
+        Type targetType = (Type) target;
+
+        Property endToTarget = ensureEndToTarget(sc, ownerType, field, targetType);
+        applyFieldEndMetadata(ctx, endToTarget, field, at, targetType);
+
+        boolean isJpaRel = RelationHeuristics.hasJpaRelationship(field);
+        String srcQn = ownerType.qualifiedName;
+        String tgtQn = ctx.qNameOf(target);
+
+        // Try merge BEFORE creating a new association.
+        if (isJpaRel && srcQn != null && tgtQn != null) {
+            if (tryMergeIntoExistingAssociation(ctx, srcQn, tgtQn, classifier, target, ownerType, field, at, endToTarget)) {
+                return; // merged
+            }
+        }
+
+        createNewAssociation(ctx, classifier, ownerType, field, at, endToTarget, isJpaRel, srcQn, tgtQn);
+    }
+
+    private void annotateOwnedAttributeDecision(UmlBuildContext ctx,
+                                               Classifier classifier,
+                                               JField field,
+                                               boolean resolvedTarget) {
+        if (!(classifier instanceof StructuredClassifier)) return;
+        StructuredClassifier sc = (StructuredClassifier) classifier;
+        Property owned = findOwnedAttribute(sc, field.name);
+        if (owned == null) return;
+
+        UmlBuilderSupport.annotateTags(owned, relationDecisionTags(field, ctx.associationPolicy, resolvedTarget));
+        UmlBuilderSupport.annotateTags(owned, aggregationDecisionTags(field));
+    }
+
+    private Property ensureEndToTarget(StructuredClassifier sc, JType ownerType, JField field, Type targetType) {
+        Property endToTarget = findOwnedAttribute(sc, field.name);
+        if (endToTarget == null) {
+            endToTarget = sc.createOwnedAttribute(field.name, targetType);
+            UmlBuilderSupport.annotateId(endToTarget, "Field:" + ownerType.qualifiedName + "#" + field.name + ":" + field.type);
+            UmlBuilderSupport.setVisibility(endToTarget, field.visibility);
+        }
+        return endToTarget;
+    }
+
+    private void applyFieldEndMetadata(UmlBuildContext ctx,
+                                      Property endToTarget,
+                                      JField field,
+                                      AssociationTarget at,
+                                      Type targetType) {
+        if (endToTarget == null || field == null || at == null) return;
+
+        endToTarget.setType(targetType);
+        endToTarget.setLower(at.lower);
+        endToTarget.setUpper(at.upper == MultiplicityResolver.STAR ? -1 : at.upper);
+        endToTarget.setAggregation(RelationHeuristics.aggregationKindFor(field));
+        UmlBuilderSupport.setVisibility(endToTarget, field.visibility);
+
+        UmlBuilderSupport.annotateTags(endToTarget, at.tags);
+        UmlBuilderSupport.annotateTags(endToTarget, relationDecisionTags(field, ctx.associationPolicy, true));
+        UmlBuilderSupport.annotateTags(endToTarget, aggregationDecisionTags(field));
+    }
+
+    private void createNewAssociation(UmlBuildContext ctx,
+                                     Classifier classifier,
+                                     JType ownerType,
+                                     JField field,
+                                     AssociationTarget at,
+                                     Property endToTarget,
+                                     boolean isJpaRel,
+                                     String srcQn,
+                                     String tgtQn) {
+        Package ownerPkg = ((Type) classifier).getPackage();
+        if (ownerPkg == null) ownerPkg = classifier.getModel();
+
+        Association assoc = UMLFactory.eINSTANCE.createAssociation();
+        assoc.setName(null);
+        ownerPkg.getPackagedElements().add(assoc);
+
+        Property endToSource = createOppositeEnd(assoc, classifier, field, ownerType);
+        configureOppositeEndMultiplicity(endToSource, field);
+
+        // Navigability (unidirectional by default; bidirectional is achieved by merging when safe).
+        try {
+            assoc.getNavigableOwnedEnds().clear();
+        } catch (Exception ignored) {
+            // some UML2 versions may throw for unmodifiable lists
+        }
+
+        if (!assoc.getMemberEnds().contains(endToTarget)) assoc.getMemberEnds().add(endToTarget);
+        if (!assoc.getMemberEnds().contains(endToSource)) assoc.getMemberEnds().add(endToSource);
+
+        ctx.stats.associationsCreated++;
+        String assocKey = "Association:" + ownerType.qualifiedName + "#" + field.name + "->" + at.targetRef + ":" + multiplicityKey(at);
+        UmlBuilderSupport.annotateId(assoc, assocKey);
+
+        // Record the association pair so dependency creation can suppress duplicates.
+        String pairKey = UmlBuildContext.undirectedPairKey(srcQn, tgtQn);
+        if (pairKey != null) ctx.associationPairs.add(pairKey);
+
+        UmlBuilderSupport.annotateTags(assoc, relationDecisionTags(field, ctx.associationPolicy, true));
+        UmlBuilderSupport.annotateTags(assoc, aggregationDecisionTags(field));
+
+        // Index for potential later merge.
+        if (isJpaRel && pairKey != null) {
+            String mappedBy = mappedByValue(field);
+            AssocMergeRecord rec = new AssocMergeRecord(assoc, srcQn, field.name, tgtQn, mappedBy, endToTarget);
+            ctx.associationRecordsByPair.computeIfAbsent(pairKey, k -> new ArrayList<>()).add(rec);
+        }
+    }
+
+    private Property createOppositeEnd(Association assoc, Classifier classifier, JField field, JType ownerType) {
+        String oppositeName = deriveOppositeEndName(field, ownerType);
+        Property endToSource = assoc.createOwnedEnd(oppositeName, (Type) classifier);
+        endToSource.setAggregation(AggregationKind.NONE_LITERAL);
+        return endToSource;
+    }
+
+    private void configureOppositeEndMultiplicity(Property endToSource, JField field) {
+        if (endToSource == null) return;
+        if (RelationHeuristics.isEmbedded(field) || RelationHeuristics.isEmbeddedId(field) || RelationHeuristics.isElementCollection(field)) {
+            endToSource.setLower(1);
+            endToSource.setUpper(1);
+            return;
+        }
+        Multiplicity opp = oppositeMultiplicityFromJpa(field);
+        endToSource.setLower(opp.lower);
+        endToSource.setUpper(opp.upper == MultiplicityResolver.STAR ? -1 : opp.upper);
+    }
+
+    /**
 
     /**
      * Merge policy:
