@@ -120,6 +120,7 @@ public final class UmlBuilder {
         UmlInheritanceBuilder inheritanceBuilder = new UmlInheritanceBuilder();
         UmlAssociationBuilder associationBuilder = new UmlAssociationBuilder();
         UmlDependencyBuilder dependencyBuilder = new UmlDependencyBuilder();
+        UmlPackageImportBuilder packageImportBuilder = new UmlPackageImportBuilder();
         UmlProfileApplicator profileApplicator = new UmlProfileApplicator();
 
         // 1) Packages (deterministic)
@@ -204,6 +205,13 @@ public final class UmlBuilder {
                 dependencyBuilder.addMethodSignatureDependencies(ctx, c, t);
                 dependencyBuilder.addMethodBodyDependencies(ctx, c, t);
             }
+        }
+
+        // 4b) Package imports (high-level dependency structure)
+        for (JType t : types) {
+            Classifier c = ctx.classifierByQName.get(t.qualifiedName);
+            if (c == null) continue;
+            packageImportBuilder.addPackageImports(ctx, t, c);
         }
 
         // Profile + stereotypes

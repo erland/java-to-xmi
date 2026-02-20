@@ -49,6 +49,9 @@ final class UmlBuildContext {
     /** Candidate associations between type pairs, used to safely merge bidirectional JPA relationships. */
     final Map<String, java.util.List<AssocMergeRecord>> associationRecordsByPair = new HashMap<>();
 
+    /** Directed package import pairs, stored as "<src>|<tgt>" by qualified package name. */
+    final Set<String> packageImportPairs = new HashSet<>();
+
     UmlBuildContext(Model model,
                     UmlBuildStats stats,
                     MultiplicityResolver multiplicityResolver,

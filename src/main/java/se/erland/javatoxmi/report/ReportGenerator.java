@@ -57,6 +57,7 @@ public final class ReportGenerator {
         report.append("## UML build stats\n\n");
         report.append("- Model name: `").append(umlModel.getName()).append("`\n");
         report.append("- Packages: **").append(umlStats.packagesCreated).append("**\n");
+        report.append("- Package imports: **").append(umlStats.packageImportsCreated).append("**\n");
         report.append("- Classifiers: **").append(umlStats.classifiersCreated).append("**\n");
         report.append("- Attributes: **").append(umlStats.attributesCreated).append("**\n");
         report.append("- Operations: **").append(umlStats.operationsCreated).append("**\n");

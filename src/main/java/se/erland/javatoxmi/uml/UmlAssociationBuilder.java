@@ -95,7 +95,10 @@ final class UmlAssociationBuilder {
             assoc.setName(null);
             ownerPkg.getPackagedElements().add(assoc);
 
-            Property endToSource = assoc.createOwnedEnd(null, (Type) classifier);
+            // Opposite end: name it for readability and for better round-tripping in tools.
+            // Prefer mappedBy (when present) since that is the canonical inverse role name in JPA.
+            String oppositeName = deriveOppositeEndName(f, t);
+            Property endToSource = assoc.createOwnedEnd(oppositeName, (Type) classifier);
             // By default, UML2 creates a conservative 0..1 opposite end. For JPA relationships we can
             // improve the opposite multiplicity even for unidirectional mappings.
             Multiplicity opp = oppositeMultiplicityFromJpa(f);
@@ -349,6 +352,20 @@ final class UmlAssociationBuilder {
             }
             if (!mb.isBlank()) return mb;
         }
+        return null;
+    }
+
+    /**
+     * Derive a reasonable role name for the opposite association end.
+     *
+     * <p>For JPA relationships, {@code mappedBy} is the best available canonical inverse role name.
+     * For non-bidirectional/unmapped associations we keep the opposite end unnamed to avoid
+     * surprising diffs and to preserve prior behavior (some tests and tools expect unnamed
+     * association-owned opposite ends for unidirectional owner-side mappings).</p>
+     */
+    private static String deriveOppositeEndName(JField srcField, JType srcType) {
+        String mb = mappedByValue(srcField);
+        if (mb != null && !mb.isBlank()) return mb;
         return null;
     }
 

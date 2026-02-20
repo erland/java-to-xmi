@@ -7,6 +7,7 @@ package se.erland.javatoxmi.uml;
  */
 public final class UmlBuildStats {
     public int packagesCreated;
+    public int packageImportsCreated;
     public int classifiersCreated;
     public int attributesCreated;
     public int operationsCreated;
