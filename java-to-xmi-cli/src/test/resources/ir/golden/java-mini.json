@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "1.0",
+  "classifiers": [
+    {
+      "id": "c:com.example.Foo",
+      "name": "Foo",
+      "qualifiedName": "com.example.Foo",
+      "packageId": null,
+      "kind": "CLASS",
+      "visibility": "PUBLIC",
+      "attributes": [
+        {
+          "id": "a:Foo.bar",
+          "name": "bar",
+          "visibility": "PRIVATE",
+          "isStatic": false,
+          "isFinal": false,
+          "type": {
+            "kind": "NAMED",
+            "name": "com.example.Bar",
+            "typeArgs": [],
+            "elementType": null,
+            "taggedValues": []
+          },
+          "stereotypes": [],
+          "taggedValues": [],
+          "source": null
+        }
+      ],
+      "operations": [
+        {
+          "id": "m:Foo.baz",
+          "name": "baz",
+          "visibility": "PUBLIC",
+          "isStatic": false,
+          "isAbstract": false,
+          "isConstructor": false,
+          "returnType": {
+            "kind": "PRIMITIVE",
+            "name": "void",
+            "typeArgs": [],
+            "elementType": null,
+            "taggedValues": []
+          },
+          "parameters": [],
+          "stereotypes": [],
+          "taggedValues": [],
+          "source": null
+        }
+      ],
+      "stereotypes": [],
+      "taggedValues": [],
+      "source": null
+    }
+  ],
+  "relations": [
+    {
+      "id": "r1",
+      "kind": "ASSOCIATION",
+      "sourceId": "c:com.example.Foo",
+      "targetId": "c:com.example.Bar",
+      "name": "bar",
+      "stereotypes": [],
+      "taggedValues": [
+        {
+          "key": "origin",
+          "value": "field"
+        }
+      ],
+      "source": null
+    }
+  ]
+}

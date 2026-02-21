@@ -11,6 +11,11 @@ import info.isaksson.erland.javatoxmi.uml.AssociationPolicy;
 import info.isaksson.erland.javatoxmi.uml.NestedTypesMode;
 import info.isaksson.erland.javatoxmi.xmi.XmiWriter;
 import info.isaksson.erland.javatoxmi.report.ReportGenerator;
+import info.isaksson.erland.javatoxmi.ir.IrJson;
+import info.isaksson.erland.javatoxmi.ir.IrModel;
+import info.isaksson.erland.javatoxmi.emitter.XmiEmitter;
+import info.isaksson.erland.javatoxmi.emitter.EmitterOptions;
+import info.isaksson.erland.javatoxmi.bridge.JModelToIrAdapter;
 
 import org.eclipse.uml2.uml.Model;
 
@@ -54,27 +59,33 @@ public final class Main {
             return 0;
         }
 
-        if (parsed.source == null) {
+        if (parsed.ir == null && parsed.source == null) {
             System.err.println("Error: --source is required.");
             System.err.println();
             CliArgs.printHelp();
             return 1;
 }
 
-        final Path sourcePath = Paths.get(parsed.source).toAbsolutePath().normalize();
-        if (!Files.exists(sourcePath)) {
-            System.err.println("Error: --source does not exist: " + sourcePath);
-            return 1;
+final Path sourcePath;
+if (parsed.ir != null && !parsed.ir.isBlank()) {
+    sourcePath = null;
+} else {
+    sourcePath = Paths.get(parsed.source).toAbsolutePath().normalize();
+    if (!Files.exists(sourcePath)) {
+        System.err.println("Error: --source does not exist: " + sourcePath);
+        return 1;
+    }
+    if (!Files.isDirectory(sourcePath)) {
+        System.err.println("Error: --source must be a directory: " + sourcePath);
+        return 1;
+    }
 }
-        if (!Files.isDirectory(sourcePath)) {
-            System.err.println("Error: --source must be a directory: " + sourcePath);
-            return 1;
-}
+
 
         // Resolve output paths
         final String modelName = (parsed.name != null && !parsed.name.isBlank())
                 ? parsed.name
-                : sourcePath.getFileName().toString();
+                : (sourcePath != null ? sourcePath.getFileName().toString() : "model");
 
         final Path xmiOut = resolveXmiOutput(parsed.output, sourcePath);
         final Path reportOut = resolveReportOutput(parsed.report, xmiOut);
@@ -86,6 +97,69 @@ public final class Main {
             System.err.println("Error: could not create output directory.");
             System.err.println(e.getMessage());
             return 2;
+}
+
+// IR-first mode: read IR JSON and emit XMI directly (for Node/TS/React/Angular extractors)
+if (parsed.ir != null && !parsed.ir.isBlank()) {
+    final Path irPath = Paths.get(parsed.ir).toAbsolutePath().normalize();
+    if (!Files.exists(irPath) || Files.isDirectory(irPath)) {
+        System.err.println("Error: --ir must point to an existing IR JSON file: " + irPath);
+        return 1;
+    }
+
+    final IrModel irModel;
+    try {
+        irModel = IrJson.read(irPath);
+    } catch (IOException e) {
+        System.err.println("Error: could not read IR JSON: " + irPath);
+        System.err.println(e.getMessage());
+        return 2;
+    }
+
+    final String irModelName = (parsed.name != null && !parsed.name.isBlank())
+            ? parsed.name
+            : stripExtension(irPath.getFileName().toString());
+
+    try {
+        new XmiEmitter().emit(
+                irModel,
+                new EmitterOptions(
+                        irModelName,
+                        !parsed.noStereotypes,
+                        parsed.deps,
+                        parsed.associationPolicy,
+                        parsed.nestedTypesMode,
+                        parsed.includeAccessors,
+                        parsed.includeConstructors
+                ),
+                xmiOut
+        );
+    } catch (RuntimeException | IOException ex) {
+        System.err.println("Error: XMI emission from IR failed.");
+        System.err.println(ex.getMessage());
+        return 2;
+    }
+
+    // Optional minimal report (only if user explicitly set --report)
+    if (parsed.report != null && !parsed.report.isBlank()) {
+        try {
+            writeIrModeReport(reportOut, irPath, xmiOut, irModel);
+        } catch (IOException e) {
+            System.err.println("Error: could not write report to: " + reportOut);
+            System.err.println(e.getMessage());
+            return 2;
+        }
+    }
+
+    System.out.println(
+            "java-to-xmi (IR mode)\n" +
+            "- IR: " + irPath + "\n" +
+            "- XMI: " + xmiOut + "\n" +
+            (parsed.report != null ? "- Report: " + reportOut + "\n" : "") +
+            "- Classifiers: " + (irModel.classifiers == null ? 0 : irModel.classifiers.size()) + "\n" +
+            "- Relations: " + (irModel.relations == null ? 0 : irModel.relations.size())
+    );
+    return 0;
 }
 
         // Step 2: deterministic source scanning
@@ -107,6 +181,21 @@ public final class Main {
             System.err.println(ex.getMessage());
             return 2;
 }
+
+
+        // Optional: export cross-language IR snapshot
+        if (parsed.writeIr != null && !parsed.writeIr.isBlank()) {
+            final Path irOut = resolveIrOutput(parsed.writeIr, xmiOut);
+            try {
+                Files.createDirectories(irOut.toAbsolutePath().normalize().getParent());
+                IrModel irModel = new JModelToIrAdapter().toIr(jModel);
+                IrJson.write(irModel, irOut);
+            } catch (IOException e) {
+                System.err.println("Error: could not write IR to: " + irOut);
+                System.err.println(e.getMessage());
+                return 2;
+            }
+        }
 
         // Step 4: build UML object graph
         final UmlBuilder.Result umlResult;
@@ -181,6 +270,14 @@ public final class Main {
         return 0;
     }
 
+    private static Path resolveIrOutput(String irArg, Path xmiOut) {
+        if (irArg != null && irArg.toLowerCase().endsWith(".json")) {
+            return Paths.get(irArg).toAbsolutePath().normalize();
+        }
+        String dir = (irArg == null || irArg.isBlank()) ? xmiOut.getParent().toString() : irArg;
+        return Paths.get(dir).toAbsolutePath().normalize().resolve("model.ir.json");
+    }
+
     private static Path resolveXmiOutput(String outputArg, Path sourcePath) {
         // If user supplies a path ending with .xmi, treat it as the XMI file path.
         // Otherwise treat it as an output directory and write model.xmi inside it.
@@ -207,6 +304,10 @@ public final class Main {
         // Step 6 flags
         String name;
         String report;
+
+        // IR mode
+        String ir;
+        String writeIr;
         boolean failOnUnresolved = false;
 
         // Step 9: backwards compatibility
@@ -260,6 +361,12 @@ public final class Main {
                         break;
                     case "--report":
                         out.report = requireValue(args, ++i, "--report");
+                        break;
+                    case "--ir":
+                        out.ir = requireValue(args, ++i, "--ir");
+                        break;
+                    case "--write-ir":
+                        out.writeIr = requireValue(args, ++i, "--write-ir");
                         break;
                     case "--fail-on-unresolved":
                         out.failOnUnresolved = parseBoolean(requireValue(args, ++i, "--fail-on-unresolved"), "--fail-on-unresolved");
@@ -365,5 +472,29 @@ public final class Main {
                     "  java -jar target/java-to-xmi.jar --source . --exclude \"**/generated/**\" --exclude \"**/*Test.java\"\n"
             );
         }
+    }
+
+    private static String stripExtension(String fileName) {
+        if (fileName == null) return "";
+        int idx = fileName.lastIndexOf('.');
+        if (idx <= 0) return fileName;
+        return fileName.substring(0, idx);
+    }
+
+    /**
+     * Minimal report for IR-first mode (no Java extractor inputs available).
+     */
+    private static void writeIrModeReport(Path reportOut, Path irPath, Path xmiOut, IrModel irModel) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# java-to-xmi report (IR mode)\n\n");
+        sb.append("- IR: ").append(irPath.toAbsolutePath().normalize()).append("\n");
+        sb.append("- XMI: ").append(xmiOut.toAbsolutePath().normalize()).append("\n");
+        sb.append("- IR schemaVersion: ").append(irModel == null ? "?" : irModel.schemaVersion).append("\n");
+        int cls = irModel == null || irModel.classifiers == null ? 0 : irModel.classifiers.size();
+        int rel = irModel == null || irModel.relations == null ? 0 : irModel.relations.size();
+        sb.append("- Classifiers: ").append(cls).append("\n");
+        sb.append("- Relations: ").append(rel).append("\n");
+        sb.append("\n");
+        Files.writeString(reportOut, sb.toString());
     }
 }
