@@ -4,10 +4,10 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>info.isaksson.erland</groupId>
-  <artifactId>java-to-xmi</artifactId>
+  <artifactId>java-to-xmi-parent</artifactId>
   <version>0.1.0-SNAPSHOT</version>
-  <name>java-to-xmi</name>
-  <description>CLI tool that converts Java source projects into UML XMI.</description>
+  <packaging>pom</packaging>
+  <name>java-to-xmi (parent)</name>
 
   <properties>
         <jackson.version>2.17.2</jackson.version>
@@ -29,155 +29,121 @@
     <emf.ecore2xml.version>2.5.0.v20100521-1847</emf.ecore2xml.version>
   </properties>
 
-  <dependencies>
-    <!-- CLI / parsing -->
-    <dependency>
-      <groupId>com.github.javaparser</groupId>
-      <artifactId>javaparser-core</artifactId>
-      <version>${javaparser.version}</version>
-    </dependency>
+  <modules>
+    <module>java-to-xmi-ir</module>
+    <module>java-to-xmi-java-extractor</module>
+    <module>java-to-xmi-emitter</module>
+    <module>java-to-xmi-cli</module>
+  </modules>
 
-    <!-- UML2 / EMF -->
-    <dependency>
-      <groupId>org.eclipse.uml2</groupId>
-      <artifactId>org.eclipse.uml2.uml</artifactId>
-      <version>${uml2.uml.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.uml2</groupId>
-      <artifactId>org.eclipse.uml2.common</artifactId>
-      <version>${uml2.common.version}</version>
-    </dependency>
-    <!-- Required to load UMLResource.UML_METAMODEL_URI during tests (Profile metaclass extensions). -->
-    <dependency>
-      <groupId>org.eclipse.uml2</groupId>
-      <artifactId>org.eclipse.uml2.uml.resources</artifactId>
-      <version>${uml2.resources.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.emf</groupId>
-      <artifactId>org.eclipse.emf.ecore</artifactId>
-      <version>${emf.ecore.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.emf</groupId>
-      <artifactId>org.eclipse.emf.common</artifactId>
-      <version>${emf.ecore.common.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.emf</groupId>
-      <artifactId>org.eclipse.emf.ecore.xmi</artifactId>
-      <version>${emf.ecore.xmi.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.emf</groupId>
-      <artifactId>org.eclipse.emf.mapping.ecore2xml</artifactId>
-      <version>${emf.ecore2xml.version}</version>
-    </dependency>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>${junit.jupiter.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.github.javaparser</groupId>
+        <artifactId>javaparser-core</artifactId>
+        <version>${javaparser.version}</version>
+      </dependency>
 
-    <!-- Tests -->
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <version>${junit.jupiter.version}</version>
-      <scope>test</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-databind</artifactId>
-      <version>${jackson.version}</version>
-    </dependency>
-
-  </dependencies>
+      <!-- Eclipse UML2 / EMF -->
+      <dependency>
+        <groupId>org.eclipse.uml2</groupId>
+        <artifactId>org.eclipse.uml2.uml</artifactId>
+        <version>${uml2.uml.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.uml2</groupId>
+        <artifactId>org.eclipse.uml2.common</artifactId>
+        <version>${uml2.common.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.uml2</groupId>
+        <artifactId>org.eclipse.uml2.uml.resources</artifactId>
+        <version>${uml2.resources.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.emf</groupId>
+        <artifactId>org.eclipse.emf.ecore</artifactId>
+        <version>${emf.ecore.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.emf</groupId>
+        <artifactId>org.eclipse.emf.common</artifactId>
+        <version>${emf.ecore.common.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.emf</groupId>
+        <artifactId>org.eclipse.emf.ecore.xmi</artifactId>
+        <version>${emf.ecore.xmi.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.emf</groupId>
+        <artifactId>org.eclipse.emf.mapping.ecore2xml</artifactId>
+        <version>${emf.ecore2xml.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <build>
     <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>${maven.compiler.version}</version>
-        <configuration>
-          <release>${maven.compiler.release}</release>
-        </configuration>
-      </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${maven.compiler.version}</version>
+          <configuration>
+            <release>${maven.compiler.release}</release>
+          </configuration>
+        </plugin>
 
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>${maven.surefire.version}</version>
-        <configuration>
-          <useModulePath>false</useModulePath>
-        </configuration>
-      </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${maven.surefire.version}</version>
+          <configuration>
+            <useModulePath>false</useModulePath>
+          </configuration>
+        </plugin>
 
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <version>${maven.shade.version}</version>
-        <executions>
-          <execution>
-            <phase>package</phase>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-            <configuration>
-              <createDependencyReducedPom>false</createDependencyReducedPom>
-              <filters>
-                <filter>
-                  <artifact>*:*</artifact>
-                  <excludes>
-                    <exclude>META-INF/*.SF</exclude>
-                    <exclude>META-INF/*.DSA</exclude>
-                    <exclude>META-INF/*.RSA</exclude>
-                  </excludes>
-                </filter>
-              </filters>
-              <transformers>
-                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>info.isaksson.erland.javatoxmi.Main</mainClass>
-                </transformer>
-              </transformers>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-
-      <plugin>
-        <groupId>org.jacoco</groupId>
-        <artifactId>jacoco-maven-plugin</artifactId>
-        <version>${jacoco.version}</version>
-        <configuration>
-          <inclBootstrapClasses>false</inclBootstrapClasses>
-        </configuration>
-        <executions>
-          <execution>
-            <id>prepare-agent</id>
-            <goals>
-              <goal>prepare-agent</goal>
-            </goals>
-            <configuration>
-              <!--
-                Eclipse UML2/EMF contains generated switch methods that can exceed JaCoCo's
-                instrumentable method size (MethodTooLargeException). We only care about
-                coverage for this project, so exclude those packages from the agent.
-              -->
-              <excludes>
-                <exclude>org/eclipse/uml2/**</exclude>
-                <exclude>org/eclipse/emf/**</exclude>
-              </excludes>
-            </configuration>
-          </execution>
-          <execution>
-            <id>report</id>
-            <phase>test</phase>
-            <goals>
-              <goal>report</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-
-    </plugins>
+        <plugin>
+          <groupId>org.jacoco</groupId>
+          <artifactId>jacoco-maven-plugin</artifactId>
+          <version>${jacoco.version}</version>
+          <configuration>
+            <inclBootstrapClasses>false</inclBootstrapClasses>
+          </configuration>
+          <executions>
+            <execution>
+              <id>prepare-agent</id>
+              <goals>
+                <goal>prepare-agent</goal>
+              </goals>
+              <configuration>
+                <excludes>
+                  <exclude>org/eclipse/uml2/**</exclude>
+                  <exclude>org/eclipse/emf/**</exclude>
+                </excludes>
+              </configuration>
+            </execution>
+            <execution>
+              <id>report</id>
+              <phase>test</phase>
+              <goals>
+                <goal>report</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
   </build>
+
 </project>
