@@ -24,6 +24,10 @@
         {
           "key": "react.componentKind",
           "value": "function"
+        },
+        {
+          "key": "react.hooks",
+          "value": "useState,useEffect"
         }
       ],
       "source": {

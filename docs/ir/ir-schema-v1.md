@@ -48,3 +48,9 @@ IDs are string values defined by the extractor. They should be:
 - unique within the model
 
 The emitter must treat IDs as opaque identifiers.
+
+---
+
+## Framework conventions
+See: `docs/ir/framework-conventions.md` for recommended React/Angular stereotypes, tags and relation semantics.
+

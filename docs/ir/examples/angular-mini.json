@@ -24,6 +24,10 @@
         {
           "key": "angular.selector",
           "value": "app-root"
+        },
+        {
+          "key": "angular.templateUrl",
+          "value": "src/app/app.component.html"
         }
       ],
       "source": {
