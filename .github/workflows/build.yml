@@ -29,5 +29,6 @@ jobs:
         with:
           name: java-to-xmi-jar
           path: |
-            target/*.jar
+            java-to-xmi-cli/target/*-shaded.jar
+            java-to-xmi-cli/target/*.jar
           if-no-files-found: error

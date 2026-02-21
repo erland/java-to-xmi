@@ -28,4 +28,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/*.jar
+            java-to-xmi-cli/target/*-shaded.jar
+            java-to-xmi-cli/target/*.jar
