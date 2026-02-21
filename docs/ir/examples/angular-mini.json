@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1.0",
+  "classifiers": [
+    {
+      "id": "c:AppComponent",
+      "name": "AppComponent",
+      "qualifiedName": "AppComponent",
+      "packageId": null,
+      "kind": "COMPONENT",
+      "visibility": "PUBLIC",
+      "attributes": [],
+      "operations": [],
+      "stereotypes": [
+        {
+          "name": "Component",
+          "qualifiedName": null
+        }
+      ],
+      "taggedValues": [
+        {
+          "key": "framework",
+          "value": "angular"
+        },
+        {
+          "key": "angular.selector",
+          "value": "app-root"
+        }
+      ],
+      "source": {
+        "file": "src/app/app.component.ts",
+        "line": 1,
+        "col": 1
+      }
+    },
+    {
+      "id": "c:UserService",
+      "name": "UserService",
+      "qualifiedName": "UserService",
+      "packageId": null,
+      "kind": "SERVICE",
+      "visibility": "PUBLIC",
+      "attributes": [],
+      "operations": [],
+      "stereotypes": [
+        {
+          "name": "Injectable",
+          "qualifiedName": null
+        }
+      ],
+      "taggedValues": [
+        {
+          "key": "framework",
+          "value": "angular"
+        }
+      ],
+      "source": {
+        "file": "src/app/user.service.ts",
+        "line": 1,
+        "col": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "r:di:AppComponent->UserService",
+      "kind": "DI",
+      "sourceId": "c:AppComponent",
+      "targetId": "c:UserService",
+      "name": null,
+      "stereotypes": [],
+      "taggedValues": [
+        {
+          "key": "origin",
+          "value": "constructor"
+        }
+      ],
+      "source": null
+    }
+  ]
+}
