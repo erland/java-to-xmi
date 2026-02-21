@@ -3,7 +3,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>se.erland</groupId>
+  <groupId>info.isaksson.erland</groupId>
   <artifactId>java-to-xmi</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <name>java-to-xmi</name>
@@ -127,7 +127,7 @@
               </filters>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>se.erland.javatoxmi.Main</mainClass>
+                  <mainClass>info.isaksson.erland.javatoxmi.Main</mainClass>
                 </transformer>
               </transformers>
             </configuration>
