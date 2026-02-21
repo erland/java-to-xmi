@@ -16,11 +16,11 @@ import java.util.function.Function;
  */
 final class JpaAssociationMerger {
     private final UmlBuildContext ctx;
-    private final Function<JField, UmlAssociationBuilder.AssociationTarget> targetComputer;
+    private final Function<JField, AssociationTargetResolver.AssociationTarget> targetComputer;
     private final Function<String, Classifier> classifierResolver;
 
     JpaAssociationMerger(UmlBuildContext ctx,
-                         Function<JField, UmlAssociationBuilder.AssociationTarget> targetComputer,
+                         Function<JField, AssociationTargetResolver.AssociationTarget> targetComputer,
                          Function<String, Classifier> classifierResolver) {
         this.ctx = ctx;
         this.targetComputer = targetComputer;
@@ -38,7 +38,7 @@ final class JpaAssociationMerger {
                                            Classifier tgtClassifier,
                                            JType srcType,
                                            JField srcField,
-                                           UmlAssociationBuilder.AssociationTarget at,
+                                           AssociationTargetResolver.AssociationTarget at,
                                            Property srcOwnedEnd) {
         String pairKey = UmlBuildContext.undirectedPairKey(srcQn, tgtQn);
         if (pairKey == null) return false;
@@ -106,7 +106,7 @@ final class JpaAssociationMerger {
                                     Classifier tgtClassifier,
                                     JType srcType,
                                     JField srcField,
-                                    UmlAssociationBuilder.AssociationTarget at,
+                                    AssociationTargetResolver.AssociationTarget at,
                                     Property srcOwnedEnd) {
         if (existing == null || existing.association == null) return false;
         Association assoc = existing.association;
@@ -169,7 +169,7 @@ final class JpaAssociationMerger {
         for (JField f : owner.fields) {
             if (f == null) continue;
             if (!RelationHeuristics.hasJpaRelationship(f)) continue;
-            UmlAssociationBuilder.AssociationTarget at = targetComputer.apply(f);
+            AssociationTargetResolver.AssociationTarget at = targetComputer.apply(f);
             if (at == null) continue;
             Classifier t = classifierResolver.apply(at.targetRef);
             if (t == null) continue;
