@@ -1,8 +1,13 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.List;
 import java.util.Objects;
 
+@JsonPropertyOrder({"id","name","qualifiedName","packageId","kind","visibility","attributes","operations","stereotypes","taggedValues","source"})
 public final class IrClassifier {
     public final String id;
     public final String name;
@@ -19,18 +24,20 @@ public final class IrClassifier {
 
     public final IrSourceRef source;
 
+    @JsonCreator
     public IrClassifier(
-            String id,
-            String name,
-            String qualifiedName,
-            String packageId,
-            IrClassifierKind kind,
-            IrVisibility visibility,
-            List<IrAttribute> attributes,
-            List<IrOperation> operations,
-            List<IrStereotype> stereotypes,
-            List<IrTaggedValue> taggedValues,
-            IrSourceRef source
+            
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("qualifiedName") String qualifiedName,
+            @JsonProperty("packageId") String packageId,
+            @JsonProperty("kind") IrClassifierKind kind,
+            @JsonProperty("visibility") IrVisibility visibility,
+            @JsonProperty("attributes") List<IrAttribute> attributes,
+            @JsonProperty("operations") List<IrOperation> operations,
+            @JsonProperty("stereotypes") List<IrStereotype> stereotypes,
+            @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues,
+            @JsonProperty("source") IrSourceRef source
     ) {
         this.id = id;
         this.name = name;

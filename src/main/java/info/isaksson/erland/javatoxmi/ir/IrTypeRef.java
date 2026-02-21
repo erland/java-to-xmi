@@ -1,5 +1,9 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -9,6 +13,7 @@ import java.util.Objects;
  *
  * <p>For complex languages, store additional details using taggedValues.</p>
  */
+@JsonPropertyOrder({"kind","name","typeArgs","elementType","taggedValues"})
 public final class IrTypeRef {
     public final IrTypeRefKind kind;
 
@@ -24,12 +29,14 @@ public final class IrTypeRef {
     /** Optional tagged values for language-specific details (e.g., TS "readonly", "optional"). */
     public final List<IrTaggedValue> taggedValues;
 
+    @JsonCreator
     public IrTypeRef(
-            IrTypeRefKind kind,
-            String name,
-            List<IrTypeRef> typeArgs,
-            IrTypeRef elementType,
-            List<IrTaggedValue> taggedValues
+            
+            @JsonProperty("kind") IrTypeRefKind kind,
+            @JsonProperty("name") String name,
+            @JsonProperty("typeArgs") List<IrTypeRef> typeArgs,
+            @JsonProperty("elementType") IrTypeRef elementType,
+            @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues
     ) {
         this.kind = kind == null ? IrTypeRefKind.UNKNOWN : kind;
         this.name = name;

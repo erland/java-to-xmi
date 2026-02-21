@@ -1,8 +1,13 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.List;
 import java.util.Objects;
 
+@JsonPropertyOrder({"id","kind","sourceId","targetId","name","stereotypes","taggedValues","source"})
 public final class IrRelation {
     public final String id;
     public final IrRelationKind kind;
@@ -14,15 +19,17 @@ public final class IrRelation {
     public final List<IrTaggedValue> taggedValues;
     public final IrSourceRef source;
 
+    @JsonCreator
     public IrRelation(
-            String id,
-            IrRelationKind kind,
-            String sourceId,
-            String targetId,
-            String name,
-            List<IrStereotype> stereotypes,
-            List<IrTaggedValue> taggedValues,
-            IrSourceRef source
+            
+            @JsonProperty("id") String id,
+            @JsonProperty("kind") IrRelationKind kind,
+            @JsonProperty("sourceId") String sourceId,
+            @JsonProperty("targetId") String targetId,
+            @JsonProperty("name") String name,
+            @JsonProperty("stereotypes") List<IrStereotype> stereotypes,
+            @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues,
+            @JsonProperty("source") IrSourceRef source
     ) {
         this.id = id;
         this.kind = kind == null ? IrRelationKind.DEPENDENCY : kind;

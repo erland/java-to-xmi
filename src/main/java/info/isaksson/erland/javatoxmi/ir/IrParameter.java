@@ -1,14 +1,24 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.List;
 import java.util.Objects;
 
+@JsonPropertyOrder({"name","type"})
 public final class IrParameter {
     public final String name;
     public final IrTypeRef type;
     public final List<IrTaggedValue> taggedValues;
 
-    public IrParameter(String name, IrTypeRef type, List<IrTaggedValue> taggedValues) {
+    @JsonCreator
+    public IrParameter(
+            @JsonProperty("name") String name,
+            @JsonProperty("type") IrTypeRef type,
+            @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues
+    ) {
         this.name = name;
         this.type = type == null ? IrTypeRef.unknown() : type;
         this.taggedValues = taggedValues == null ? List.of() : List.copyOf(taggedValues);

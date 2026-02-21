@@ -1,15 +1,24 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.Objects;
 
 /**
  * A stereotype name (optionally qualified). Keep it free-form to avoid coupling to any one UML profile.
  */
+@JsonPropertyOrder({"name","qualifiedName"})
 public final class IrStereotype {
     public final String name;
     public final String qualifiedName;
 
-    public IrStereotype(String name, String qualifiedName) {
+    @JsonCreator
+    public IrStereotype(
+            @JsonProperty("name") String name,
+            @JsonProperty("qualifiedName") String qualifiedName
+    ) {
         this.name = name;
         this.qualifiedName = qualifiedName;
     }

@@ -1,11 +1,16 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.List;
 import java.util.Objects;
 
 /**
  * Optional packaging structure. For languages with modules/folders, use packages to group classifiers.
  */
+@JsonPropertyOrder({"id","name","qualifiedName","parentId"})
 public final class IrPackage {
     public final String id;
     public final String name;
@@ -13,7 +18,14 @@ public final class IrPackage {
     public final String parentId;
     public final List<IrTaggedValue> taggedValues;
 
-    public IrPackage(String id, String name, String qualifiedName, String parentId, List<IrTaggedValue> taggedValues) {
+    @JsonCreator
+    public IrPackage(
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("qualifiedName") String qualifiedName,
+            @JsonProperty("parentId") String parentId,
+            @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues
+    ) {
         this.id = id;
         this.name = name;
         this.qualifiedName = qualifiedName;

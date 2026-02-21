@@ -1,8 +1,13 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.List;
 import java.util.Objects;
 
+@JsonPropertyOrder({"id","name","visibility","isStatic","isFinal","type","stereotypes","taggedValues","source"})
 public final class IrAttribute {
     public final String id;
     public final String name;
@@ -14,16 +19,18 @@ public final class IrAttribute {
     public final List<IrTaggedValue> taggedValues;
     public final IrSourceRef source;
 
+    @JsonCreator
     public IrAttribute(
-            String id,
-            String name,
-            IrVisibility visibility,
-            boolean isStatic,
-            boolean isFinal,
-            IrTypeRef type,
-            List<IrStereotype> stereotypes,
-            List<IrTaggedValue> taggedValues,
-            IrSourceRef source
+            
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("visibility") IrVisibility visibility,
+            @JsonProperty("isStatic") boolean isStatic,
+            @JsonProperty("isFinal") boolean isFinal,
+            @JsonProperty("type") IrTypeRef type,
+            @JsonProperty("stereotypes") List<IrStereotype> stereotypes,
+            @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues,
+            @JsonProperty("source") IrSourceRef source
     ) {
         this.id = id;
         this.name = name;

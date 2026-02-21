@@ -10,7 +10,8 @@
   <description>CLI tool that converts Java source projects into UML XMI.</description>
 
   <properties>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <jackson.version>2.17.2</jackson.version>
+<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
     <javaparser.version>3.26.2</javaparser.version>
     <jacoco.version>0.8.14</jacoco.version>
@@ -81,6 +82,13 @@
       <version>${junit.jupiter.version}</version>
       <scope>test</scope>
     </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+
   </dependencies>
 
   <build>

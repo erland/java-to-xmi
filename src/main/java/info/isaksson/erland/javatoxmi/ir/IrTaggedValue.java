@@ -1,12 +1,21 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.Objects;
 
+@JsonPropertyOrder({"key","value"})
 public final class IrTaggedValue {
     public final String key;
     public final String value;
 
-    public IrTaggedValue(String key, String value) {
+    @JsonCreator
+    public IrTaggedValue(
+            @JsonProperty("key") String key,
+            @JsonProperty("value") String value
+    ) {
         this.key = key;
         this.value = value;
     }

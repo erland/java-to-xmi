@@ -1,28 +1,38 @@
 package info.isaksson.erland.javatoxmi.ir;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import java.util.List;
 import java.util.Objects;
 
 /**
  * Root of the cross-language IR.
  */
+@JsonPropertyOrder({"schemaVersion","packages","classifiers","relations","taggedValues"})
 public final class IrModel {
     public final String schemaVersion;
 
     /** Optional packaging. Many extractors can omit packages and just use qualifiedName. */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public final List<IrPackage> packages;
 
     public final List<IrClassifier> classifiers;
     public final List<IrRelation> relations;
 
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public final List<IrTaggedValue> taggedValues;
 
+    @JsonCreator
     public IrModel(
-            String schemaVersion,
-            List<IrPackage> packages,
-            List<IrClassifier> classifiers,
-            List<IrRelation> relations,
-            List<IrTaggedValue> taggedValues
+            
+            @JsonProperty("schemaVersion") String schemaVersion,
+            @JsonProperty("packages") List<IrPackage> packages,
+            @JsonProperty("classifiers") List<IrClassifier> classifiers,
+            @JsonProperty("relations") List<IrRelation> relations,
+            @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues
     ) {
         this.schemaVersion = schemaVersion == null ? "1.0" : schemaVersion;
         this.packages = packages == null ? List.of() : List.copyOf(packages);
