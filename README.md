@@ -78,6 +78,25 @@ Reporting:
 Type-level Java annotations are represented as:
 
 1) A UML Profile named `JavaAnnotations` embedded in the XMI
+
+## XMI service image (GHCR)
+
+This repository publishes a ready-to-run HTTP service image used by `code-to-xmi-server`:
+
+- `ghcr.io/erland/code-to-xmi-xmi-service`
+
+Endpoints:
+
+- `GET /health`
+- `POST /v1/xmi`
+  - IR mode: multipart `irFile` (recommended) or text field `irJson`
+  - Java mode: multipart `inputZip` or `repoUrl` with `language=java`
+
+Run it directly:
+
+```bash
+docker run --rm -p 7072:7072 ghcr.io/erland/code-to-xmi-xmi-service:snapshot
+```
 2) Stereotype applications emitted in an `xmi:Extension` block (namespace `j2x`)
 
 This avoids relying on UML2's runtime stereotype application APIs, while keeping the output deterministic.

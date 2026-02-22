@@ -1,0 +1,20 @@
+FROM node:20-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates openjdk-17-jre-headless \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Node wrapper service deps
+WORKDIR /app/services/xmi-service
+COPY services/xmi-service/package.json services/xmi-service/package-lock.json* ./
+RUN npm ci --omit=dev --no-audit --no-fund
+COPY services/xmi-service/src ./src
+
+# java-to-xmi CLI jar (built by CI and placed in dist/)
+WORKDIR /app
+COPY dist/java-to-xmi-cli.jar ./java-to-xmi-cli.jar
+ENV JAVA_TO_XMI_JAR=/app/java-to-xmi-cli.jar
+
+EXPOSE 7072
+CMD ["node","services/xmi-service/src/index.js"]
