@@ -60,17 +60,30 @@ public final class XmiWriter {
             Files.createDirectories(parent);
         }
 
+        String wrapped = writeToString(umlModel, jModel);
+        Files.writeString(outFile, wrapped, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Serialize a UML2 {@link Model} to a deterministic XMI string.
+     *
+     * <p>This is useful for server-mode usage where callers want the XMI in-memory rather than
+     * writing to disk.</p>
+     */
+    public static String writeToString(Model umlModel, JModel jModel) throws IOException {
+        if (umlModel == null) {
+            throw new IllegalArgumentException("umlModel must not be null");
+        }
+
         // Ensure UML package is initialized
         UMLPackage.eINSTANCE.eClass();
 
         ResourceSet resourceSet = new ResourceSetImpl();
-
         // Register UML in the package registry
         resourceSet.getPackageRegistry().put(UMLPackage.eNS_URI, UMLPackage.eINSTANCE);
 
-        // Use XMIResourceImpl to ensure <xmi:XMI> root wrapper (some tools expect this).
-
-        URI uri = URI.createFileURI(outFile.toAbsolutePath().toString());
+        // Use a dummy URI (we won't write to disk).
+        URI uri = URI.createURI("memory:/model.xmi");
         Resource resource = new XMIResourceImpl(uri);
         resource.getContents().add(umlModel);
 
@@ -82,11 +95,9 @@ public final class XmiWriter {
         Map<String, Object> options = new HashMap<String, Object>();
         options.put(XMLResource.OPTION_ENCODING, "UTF-8");
         options.put(XMLResource.OPTION_FORMATTED, Boolean.TRUE);
-
-        // Avoid non-deterministic metadata.
         options.put(XMLResource.OPTION_SAVE_TYPE_INFORMATION, Boolean.FALSE);
         options.put(XMLResource.OPTION_SCHEMA_LOCATION, Boolean.FALSE);
-        // Do not generate UUID-based IDs (some older EMF versions ignore/omit this option).
+
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         resource.save(baos, options);
         String xml = baos.toString(StandardCharsets.UTF_8);
@@ -94,13 +105,10 @@ public final class XmiWriter {
         // Always produce a wrapped <xmi:XMI> document for maximum tool compatibility.
         String wrapped = ensureXmiWrapper(xml);
 
-
-        // Optional: inject stereotype applications via XMI extension.
         if (jModel != null) {
             wrapped = StereotypeXmiInjector.inject(umlModel, jModel, wrapped);
         }
-
-        Files.writeString(outFile, wrapped, StandardCharsets.UTF_8);
+        return wrapped;
     }
 
     private static String ensureXmiWrapper(String xml) {

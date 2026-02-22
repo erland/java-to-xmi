@@ -31,6 +31,12 @@ public final class IrJson {
         }
     }
 
+    /** Parse an IR model from a JSON string. */
+    public static IrModel readFromString(String json) throws IOException {
+        if (json == null) throw new IllegalArgumentException("json is null");
+        return MAPPER.readValue(json, IrModel.class);
+    }
+
     public static void write(IrModel model, Path path) throws IOException {
         if (path == null) throw new IllegalArgumentException("path is null");
         IrModel normalized = IrNormalizer.normalize(model);

@@ -1,20 +1,13 @@
 package info.isaksson.erland.javatoxmi;
 
-import info.isaksson.erland.javatoxmi.io.SourceScanner;
-import info.isaksson.erland.javatoxmi.extract.JavaExtractor;
-import info.isaksson.erland.javatoxmi.model.JModel;
-import info.isaksson.erland.javatoxmi.model.JType;
-import info.isaksson.erland.javatoxmi.model.UnresolvedTypeRef;
-import info.isaksson.erland.javatoxmi.uml.UmlBuilder;
-import info.isaksson.erland.javatoxmi.uml.UmlBuildStats;
+import info.isaksson.erland.javatoxmi.core.JavaToXmiOptions;
+import info.isaksson.erland.javatoxmi.core.JavaToXmiResult;
+import info.isaksson.erland.javatoxmi.core.JavaToXmiService;
 import info.isaksson.erland.javatoxmi.uml.AssociationPolicy;
 import info.isaksson.erland.javatoxmi.uml.NestedTypesMode;
-import info.isaksson.erland.javatoxmi.xmi.XmiWriter;
 import info.isaksson.erland.javatoxmi.report.ReportGenerator;
 import info.isaksson.erland.javatoxmi.ir.IrJson;
 import info.isaksson.erland.javatoxmi.ir.IrModel;
-import info.isaksson.erland.javatoxmi.emitter.XmiEmitter;
-import info.isaksson.erland.javatoxmi.emitter.EmitterOptions;
 import info.isaksson.erland.javatoxmi.bridge.JModelToIrAdapter;
 
 import org.eclipse.uml2.uml.Model;
@@ -35,6 +28,8 @@ import java.util.List;
  * - XMI serialization
  */
 public final class Main {
+
+    private static final JavaToXmiService SERVICE = new JavaToXmiService();
 
     public static void main(String[] args) {
         System.exit(run(args));
@@ -121,19 +116,9 @@ if (parsed.ir != null && !parsed.ir.isBlank()) {
             : stripExtension(irPath.getFileName().toString());
 
     try {
-        new XmiEmitter().emit(
-                irModel,
-                new EmitterOptions(
-                        irModelName,
-                        !parsed.noStereotypes,
-                        parsed.deps,
-                        parsed.associationPolicy,
-                        parsed.nestedTypesMode,
-                        parsed.includeAccessors,
-                        parsed.includeConstructors
-                ),
-                xmiOut
-        );
+        JavaToXmiOptions opts = toCoreOptions(parsed, irModelName);
+        JavaToXmiResult res = SERVICE.generateFromIr(irModel, opts);
+        Files.writeString(xmiOut, res.xmiString);
     } catch (RuntimeException | IOException ex) {
         System.err.println("Error: XMI emission from IR failed.");
         System.err.println(ex.getMessage());
@@ -162,34 +147,28 @@ if (parsed.ir != null && !parsed.ir.isBlank()) {
     return 0;
 }
 
-        // Step 2: deterministic source scanning
-        final List<Path> javaFiles;
+        // Core pipeline (scan + extract + UML build + XMI string)
+        final JavaToXmiResult res;
         try {
-            javaFiles = SourceScanner.scan(sourcePath, parsed.excludes, parsed.includeTests);
-        } catch (IOException e) {
-            System.err.println("Error: could not scan source directory: " + sourcePath);
+            JavaToXmiOptions opts = toCoreOptions(parsed, modelName);
+            opts.includeTests = parsed.includeTests;
+            res = SERVICE.generateFromSource(sourcePath, parsed.excludes, opts);
+            Files.writeString(xmiOut, res.xmiString);
+        } catch (RuntimeException | IOException e) {
+            System.err.println("Error: conversion failed.");
             System.err.println(e.getMessage());
             return 2;
-}
+        }
 
-        // Step 3: parse + extract Java semantic model
-        final JModel jModel;
-        try {
-            jModel = new JavaExtractor().extract(sourcePath, javaFiles, parsed.deps);
-        } catch (RuntimeException ex) {
-            System.err.println("Error: extraction failed.");
-            System.err.println(ex.getMessage());
-            return 2;
-}
-
+        final List<Path> javaFiles = res.javaFiles;
 
         // Optional: export cross-language IR snapshot
         if (parsed.writeIr != null && !parsed.writeIr.isBlank()) {
             final Path irOut = resolveIrOutput(parsed.writeIr, xmiOut);
             try {
                 Files.createDirectories(irOut.toAbsolutePath().normalize().getParent());
-                IrModel irModel = new JModelToIrAdapter().toIr(jModel);
-                IrJson.write(irModel, irOut);
+                IrModel outIr = new JModelToIrAdapter().toIr(res.jModel);
+                IrJson.write(outIr, irOut);
             } catch (IOException e) {
                 System.err.println("Error: could not write IR to: " + irOut);
                 System.err.println(e.getMessage());
@@ -197,47 +176,15 @@ if (parsed.ir != null && !parsed.ir.isBlank()) {
             }
         }
 
-        // Step 4: build UML object graph
-        final UmlBuilder.Result umlResult;
-        try {
-            umlResult = new UmlBuilder().build(
-                    jModel,
-                    modelName,
-                    !parsed.noStereotypes,
-                    parsed.associationPolicy,
-                    parsed.nestedTypesMode,
-                    parsed.deps,
-                    parsed.includeAccessors,
-                    parsed.includeConstructors
-            );
-        } catch (RuntimeException ex) {
-            System.err.println("Error: UML build failed.");
-            System.err.println(ex.getMessage());
-            return 2;
-}
-
-        // Step 5: XMI export
-        try {
-            if (parsed.noStereotypes) {
-                XmiWriter.write(umlResult.umlModel, xmiOut);
-            } else {
-                XmiWriter.write(umlResult.umlModel, jModel, xmiOut);
-            }
-        } catch (IOException e) {
-            System.err.println("Error: could not write XMI to: " + xmiOut);
-            System.err.println(e.getMessage());
-            return 2;
-}
-
         // Step 6: report generation
         try {
             ReportGenerator.writeMarkdown(
                     reportOut,
                     sourcePath,
                     xmiOut,
-                    jModel,
-                    umlResult.umlModel,
-                    umlResult.stats,
+                    res.jModel,
+                    res.umlModel,
+                    res.stats,
                     javaFiles,
                     parsed.includeTests,
                     parsed.excludes,
@@ -250,8 +197,8 @@ if (parsed.ir != null && !parsed.ir.isBlank()) {
 }
 
         // Exit code rules
-        if (parsed.failOnUnresolved && !jModel.unresolvedTypes.isEmpty()) {
-            System.err.println("Unresolved (unknown) types present (" + jModel.unresolvedTypes.size() + ") and --fail-on-unresolved is set.");
+        if (parsed.failOnUnresolved && res.unresolvedTypeCount > 0) {
+            System.err.println("Unresolved (unknown) types present (" + res.unresolvedTypeCount + ") and --fail-on-unresolved is set.");
             System.err.println("See report: " + reportOut);
             return 3;
 }
@@ -262,12 +209,25 @@ if (parsed.ir != null && !parsed.ir.isBlank()) {
                 "- XMI: " + xmiOut + "\n" +
                 "- Report: " + reportOut + "\n" +
                 "- Java files: " + javaFiles.size() + "\n" +
-                "- Types: " + jModel.types.size() + "\n" +
-                "- Parse errors: " + jModel.parseErrors.size() + "\n" +
-                "- External refs (stubbed): " + jModel.externalTypeRefs.size() + "\n" +
-                "- Unresolved (unknown): " + jModel.unresolvedTypes.size()
+                "- Types: " + res.jModel.types.size() + "\n" +
+                "- Parse errors: " + res.jModel.parseErrors.size() + "\n" +
+                "- External refs (stubbed): " + res.jModel.externalTypeRefs.size() + "\n" +
+                "- Unresolved (unknown): " + res.unresolvedTypeCount
         );
         return 0;
+    }
+
+    private static JavaToXmiOptions toCoreOptions(CliArgs parsed, String modelName) {
+        JavaToXmiOptions o = new JavaToXmiOptions();
+        o.modelName = modelName;
+        o.includeStereotypes = !parsed.noStereotypes;
+        o.includeDependencies = parsed.deps;
+        o.associationPolicy = parsed.associationPolicy;
+        o.nestedTypesMode = parsed.nestedTypesMode;
+        o.includeAccessors = parsed.includeAccessors;
+        o.includeConstructors = parsed.includeConstructors;
+        o.failOnUnresolved = parsed.failOnUnresolved;
+        return o;
     }
 
     private static Path resolveIrOutput(String irArg, Path xmiOut) {

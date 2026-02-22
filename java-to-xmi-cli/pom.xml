@@ -16,17 +16,12 @@
   <dependencies>
     <dependency>
       <groupId>info.isaksson.erland</groupId>
+      <artifactId>java-to-xmi-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>info.isaksson.erland</groupId>
       <artifactId>java-to-xmi-ir</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>info.isaksson.erland</groupId>
-      <artifactId>java-to-xmi-java-extractor</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>info.isaksson.erland</groupId>
-      <artifactId>java-to-xmi-emitter</artifactId>
       <version>${project.version}</version>
     </dependency>
 

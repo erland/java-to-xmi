@@ -27,6 +27,17 @@ public final class XmiEmitter {
         }
     }
 
+    /** In-memory emission result (XMI string + UML build info). */
+    public static final class StringResult {
+        public final String xmi;
+        public final Result build;
+
+        StringResult(String xmi, Result build) {
+            this.xmi = xmi;
+            this.build = build;
+        }
+    }
+
     private final IrToJModelAdapter adapter = new IrToJModelAdapter();
 
     /**
@@ -61,5 +72,61 @@ public final class XmiEmitter {
         }
 
         return new Result(uml.umlModel, uml.stats);
+    }
+
+    /**
+     * Emit XMI as an in-memory string.
+     *
+     * <p>Useful for server-mode usage where callers want to stream the XMI without
+     * writing intermediate files.</p>
+     */
+    public String emitToString(IrModel ir, EmitterOptions options) throws IOException {
+        if (ir == null) throw new IllegalArgumentException("ir must not be null");
+        if (options == null) options = EmitterOptions.defaults("model");
+
+        IrModel normalized = IrNormalizer.normalize(ir);
+        JModel jModel = adapter.adapt(normalized, options);
+
+        UmlBuilder.Result uml = new UmlBuilder().build(
+                jModel,
+                options.modelName,
+                options.includeStereotypes,
+                options.associationPolicy,
+                options.nestedTypesMode,
+                options.includeDependencies,
+                options.includeAccessors,
+                options.includeConstructors
+        );
+
+        if (options.includeStereotypes) {
+            return XmiWriter.writeToString(uml.umlModel, jModel);
+        }
+        return XmiWriter.writeToString(uml.umlModel, null);
+    }
+
+    /** Emit XMI as a string and also return the UML model + stats. */
+    public StringResult emitToStringWithResult(IrModel ir, EmitterOptions options) throws IOException {
+        if (ir == null) throw new IllegalArgumentException("ir must not be null");
+        if (options == null) options = EmitterOptions.defaults("model");
+
+        IrModel normalized = IrNormalizer.normalize(ir);
+        JModel jModel = adapter.adapt(normalized, options);
+
+        UmlBuilder.Result uml = new UmlBuilder().build(
+                jModel,
+                options.modelName,
+                options.includeStereotypes,
+                options.associationPolicy,
+                options.nestedTypesMode,
+                options.includeDependencies,
+                options.includeAccessors,
+                options.includeConstructors
+        );
+
+        String xmi = options.includeStereotypes
+                ? XmiWriter.writeToString(uml.umlModel, jModel)
+                : XmiWriter.writeToString(uml.umlModel, null);
+
+        return new StringResult(xmi, new Result(uml.umlModel, uml.stats));
     }
 }

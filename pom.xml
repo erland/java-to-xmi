@@ -33,6 +33,7 @@
     <module>java-to-xmi-ir</module>
     <module>java-to-xmi-java-extractor</module>
     <module>java-to-xmi-emitter</module>
+    <module>java-to-xmi-core</module>
     <module>java-to-xmi-cli</module>
   </modules>
 
