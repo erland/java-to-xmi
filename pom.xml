@@ -7,7 +7,16 @@
   <artifactId>java-to-xmi-parent</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
-  <name>java-to-xmi (parent)</name>
+  
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+<name>java-to-xmi (parent)</name>
 
   <properties>
         <jackson.version>2.17.2</jackson.version>

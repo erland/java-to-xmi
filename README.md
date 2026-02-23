@@ -119,3 +119,9 @@ java -jar target/java-to-xmi.jar --source ... --no-stereotypes
 This repo includes a GitHub Actions workflow that triggers a snapshot image rebuild in `erland/code-to-xmi-server` on every push to `main`.
 
 To enable it, add a repository secret named `CODE_TO_XMI_SERVER_DISPATCH_TOKEN` with a GitHub PAT that has permission to call `repository_dispatch` on `erland/code-to-xmi-server`.
+
+## License
+
+Licensed under the **MIT License**. See [`LICENSE`](LICENSE).
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for third-party license notes.
