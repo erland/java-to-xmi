@@ -25,11 +25,11 @@ final class UmlDependencyBuilder {
         Set<String> deps = new HashSet<>();
         for (JMethod m : t.methods) {
             if (m.returnType != null && !m.returnType.isBlank() && !"void".equals(m.returnType)) {
-                deps.add(UmlAssociationBuilder.stripGenerics(m.returnType));
+                deps.add(normalizeTypeName(m.returnType));
             }
             for (JParam p : m.params) {
                 if (p.type == null || p.type.isBlank()) continue;
-                deps.add(UmlAssociationBuilder.stripGenerics(p.type));
+                deps.add(normalizeTypeName(p.type));
             }
         }
 
@@ -49,7 +49,7 @@ final class UmlDependencyBuilder {
         Set<String> deps = new HashSet<>();
         for (String depTypeRaw : t.methodBodyTypeDependencies) {
             if (depTypeRaw == null || depTypeRaw.isBlank()) continue;
-            deps.add(UmlAssociationBuilder.stripGenerics(depTypeRaw));
+            deps.add(normalizeTypeName(depTypeRaw));
         }
 
         List<String> sorted = new ArrayList<>(deps);
@@ -65,6 +65,11 @@ final class UmlDependencyBuilder {
                                         String toQName,
                                         String kind) {
         if (ctx == null || from == null) return;
+        if (toQName == null || toQName.isBlank()) return;
+
+        // Normalization MUST match type resolution elsewhere (e.g., parameters/attributes),
+        // otherwise dependencies for arrays ("Foo[]") would never resolve the target classifier.
+        toQName = normalizeTypeName(toQName);
         if (toQName == null || toQName.isBlank()) return;
 
         Classifier target = ctx.classifierByQName.get(toQName);
@@ -95,5 +100,21 @@ final class UmlDependencyBuilder {
             }
         }
         return null;
+    }
+
+    /**
+     * Normalize a type name string into something that can be looked up in {@code ctx.classifierByQName}.
+     *
+     * <p>We currently store classifiers by their qualified name (without generics and without array suffixes).
+     * This is intentionally conservative and matches how parameter/attribute types are resolved.</p>
+     */
+    private static String normalizeTypeName(String raw) {
+        if (raw == null) return null;
+        String t = UmlAssociationBuilder.stripGenerics(raw).trim();
+        // Remove repeated array suffixes: Foo[][] -> Foo
+        while (t.endsWith("[]")) {
+            t = t.substring(0, t.length() - 2).trim();
+        }
+        return t;
     }
 }
