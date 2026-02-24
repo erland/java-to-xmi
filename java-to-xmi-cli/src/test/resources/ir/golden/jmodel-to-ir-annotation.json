@@ -1,0 +1,39 @@
+{
+  "schemaVersion" : "1.0",
+  "stereotypeDefinitions" : [
+    {
+      "id" : "st:java.Annotation",
+      "name" : "Annotation",
+      "profileName" : "java",
+      "appliesTo" : [
+        "Class"
+      ]
+    }
+  ],
+  "classifiers" : [
+    {
+      "id" : "c:p.MyAnno",
+      "name" : "MyAnno",
+      "qualifiedName" : "p.MyAnno",
+      "packageId" : null,
+      "kind" : "CLASS",
+      "visibility" : "PUBLIC",
+      "attributes" : [ ],
+      "operations" : [ ],
+      "stereotypes" : [
+        {
+          "name" : "Annotation",
+          "qualifiedName" : null
+        }
+      ],
+      "stereotypeRefs" : [
+        {
+          "stereotypeId" : "st:java.Annotation"
+        }
+      ],
+      "taggedValues" : [ ],
+      "source" : null
+    }
+  ],
+  "relations" : [ ]
+}
