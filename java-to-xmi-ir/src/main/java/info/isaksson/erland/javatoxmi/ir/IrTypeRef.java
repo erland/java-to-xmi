@@ -57,6 +57,11 @@ public final class IrTypeRef {
         return new IrTypeRef(IrTypeRefKind.PRIMITIVE, name, null, null, null);
     }
 
+    /** Convenience for operations without explicit return type. */
+    public static IrTypeRef voidType() {
+        return primitive("void");
+    }
+
     public static IrTypeRef arrayOf(IrTypeRef element) {
         return new IrTypeRef(IrTypeRefKind.ARRAY, null, null, element, null);
     }

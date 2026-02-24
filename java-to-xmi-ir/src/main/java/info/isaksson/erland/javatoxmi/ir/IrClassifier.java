@@ -1,13 +1,14 @@
 package info.isaksson.erland.javatoxmi.ir;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.List;
 import java.util.Objects;
 
-@JsonPropertyOrder({"id","name","qualifiedName","packageId","kind","visibility","attributes","operations","stereotypes","taggedValues","source"})
+@JsonPropertyOrder({"id","name","qualifiedName","packageId","kind","visibility","attributes","operations","stereotypes","stereotypeRefs","taggedValues","source"})
 public final class IrClassifier {
     public final String id;
     public final String name;
@@ -21,6 +22,11 @@ public final class IrClassifier {
 
     public final List<IrStereotype> stereotypes;
     public final List<IrTaggedValue> taggedValues;
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+
+
+    public final List<IrStereotypeRef> stereotypeRefs;
 
     public final IrSourceRef source;
 
@@ -36,6 +42,7 @@ public final class IrClassifier {
             @JsonProperty("attributes") List<IrAttribute> attributes,
             @JsonProperty("operations") List<IrOperation> operations,
             @JsonProperty("stereotypes") List<IrStereotype> stereotypes,
+            @JsonProperty("stereotypeRefs") List<IrStereotypeRef> stereotypeRefs,
             @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues,
             @JsonProperty("source") IrSourceRef source
     ) {
@@ -48,11 +55,30 @@ public final class IrClassifier {
         this.attributes = attributes == null ? List.of() : List.copyOf(attributes);
         this.operations = operations == null ? List.of() : List.copyOf(operations);
         this.stereotypes = stereotypes == null ? List.of() : List.copyOf(stereotypes);
+        this.stereotypeRefs = stereotypeRefs == null ? List.of() : List.copyOf(stereotypeRefs);
         this.taggedValues = taggedValues == null ? List.of() : List.copyOf(taggedValues);
         this.source = source;
     }
 
-    @Override public boolean equals(Object o) {
+    
+    /** Backwards-compatible constructor (without stereotypeRefs). */
+    public IrClassifier(
+            String id,
+            String name,
+            String qualifiedName,
+            String packageId,
+            IrClassifierKind kind,
+            IrVisibility visibility,
+            List<IrAttribute> attributes,
+            List<IrOperation> operations,
+            List<IrStereotype> stereotypes,
+            List<IrTaggedValue> taggedValues,
+            IrSourceRef source
+    ) {
+        this(id, name, qualifiedName, packageId, kind, visibility, attributes, operations, stereotypes, null, taggedValues, source);
+    }
+
+@Override public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof IrClassifier)) return false;
         IrClassifier that = (IrClassifier) o;
@@ -65,11 +91,12 @@ public final class IrClassifier {
                 Objects.equals(attributes, that.attributes) &&
                 Objects.equals(operations, that.operations) &&
                 Objects.equals(stereotypes, that.stereotypes) &&
+                Objects.equals(stereotypeRefs, that.stereotypeRefs) &&
                 Objects.equals(taggedValues, that.taggedValues) &&
                 Objects.equals(source, that.source);
     }
 
     @Override public int hashCode() {
-        return Objects.hash(id, name, qualifiedName, packageId, kind, visibility, attributes, operations, stereotypes, taggedValues, source);
+        return Objects.hash(id, name, qualifiedName, packageId, kind, visibility, attributes, operations, stereotypes, stereotypeRefs, taggedValues, source);
     }
 }

@@ -1,13 +1,14 @@
 package info.isaksson.erland.javatoxmi.ir;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.List;
 import java.util.Objects;
 
-@JsonPropertyOrder({"id","kind","sourceId","targetId","name","stereotypes","taggedValues","source"})
+@JsonPropertyOrder({"id","kind","sourceId","targetId","name","stereotypes","stereotypeRefs","taggedValues","source"})
 public final class IrRelation {
     public final String id;
     public final IrRelationKind kind;
@@ -17,6 +18,11 @@ public final class IrRelation {
 
     public final List<IrStereotype> stereotypes;
     public final List<IrTaggedValue> taggedValues;
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+
+
+    public final List<IrStereotypeRef> stereotypeRefs;
     public final IrSourceRef source;
 
     @JsonCreator
@@ -28,6 +34,7 @@ public final class IrRelation {
             @JsonProperty("targetId") String targetId,
             @JsonProperty("name") String name,
             @JsonProperty("stereotypes") List<IrStereotype> stereotypes,
+            @JsonProperty("stereotypeRefs") List<IrStereotypeRef> stereotypeRefs,
             @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues,
             @JsonProperty("source") IrSourceRef source
     ) {
@@ -37,11 +44,27 @@ public final class IrRelation {
         this.targetId = targetId;
         this.name = name;
         this.stereotypes = stereotypes == null ? List.of() : List.copyOf(stereotypes);
+        this.stereotypeRefs = stereotypeRefs == null ? List.of() : List.copyOf(stereotypeRefs);
         this.taggedValues = taggedValues == null ? List.of() : List.copyOf(taggedValues);
         this.source = source;
     }
 
-    @Override public boolean equals(Object o) {
+    
+    /** Backwards-compatible constructor (without stereotypeRefs). */
+    public IrRelation(
+            String id,
+            IrRelationKind kind,
+            String sourceId,
+            String targetId,
+            String name,
+            List<IrStereotype> stereotypes,
+            List<IrTaggedValue> taggedValues,
+            IrSourceRef source
+    ) {
+        this(id, kind, sourceId, targetId, name, stereotypes, null, taggedValues, source);
+    }
+
+@Override public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof IrRelation)) return false;
         IrRelation that = (IrRelation) o;
@@ -51,11 +74,12 @@ public final class IrRelation {
                 Objects.equals(targetId, that.targetId) &&
                 Objects.equals(name, that.name) &&
                 Objects.equals(stereotypes, that.stereotypes) &&
+                Objects.equals(stereotypeRefs, that.stereotypeRefs) &&
                 Objects.equals(taggedValues, that.taggedValues) &&
                 Objects.equals(source, that.source);
     }
 
     @Override public int hashCode() {
-        return Objects.hash(id, kind, sourceId, targetId, name, stereotypes, taggedValues, source);
+        return Objects.hash(id, kind, sourceId, targetId, name, stereotypes, stereotypeRefs, taggedValues, source);
     }
 }

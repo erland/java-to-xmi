@@ -11,9 +11,13 @@ import java.util.Objects;
 /**
  * Root of the cross-language IR.
  */
-@JsonPropertyOrder({"schemaVersion","packages","classifiers","relations","taggedValues"})
+@JsonPropertyOrder({"schemaVersion","stereotypeDefinitions","packages","classifiers","relations","taggedValues"})
 public final class IrModel {
     public final String schemaVersion;
+
+    /** Registry of stereotype definitions for downstream UML/XMI generation. */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public final List<IrStereotypeDefinition> stereotypeDefinitions;
 
     /** Optional packaging. Many extractors can omit packages and just use qualifiedName. */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
@@ -27,25 +31,39 @@ public final class IrModel {
 
     @JsonCreator
     public IrModel(
-            
             @JsonProperty("schemaVersion") String schemaVersion,
+            @JsonProperty("stereotypeDefinitions") List<IrStereotypeDefinition> stereotypeDefinitions,
             @JsonProperty("packages") List<IrPackage> packages,
             @JsonProperty("classifiers") List<IrClassifier> classifiers,
             @JsonProperty("relations") List<IrRelation> relations,
             @JsonProperty("taggedValues") List<IrTaggedValue> taggedValues
     ) {
         this.schemaVersion = schemaVersion == null ? "1.0" : schemaVersion;
+        this.stereotypeDefinitions = stereotypeDefinitions == null ? List.of() : List.copyOf(stereotypeDefinitions);
         this.packages = packages == null ? List.of() : List.copyOf(packages);
         this.classifiers = classifiers == null ? List.of() : List.copyOf(classifiers);
         this.relations = relations == null ? List.of() : List.copyOf(relations);
         this.taggedValues = taggedValues == null ? List.of() : List.copyOf(taggedValues);
     }
 
+    /** Backwards-compatible constructor (without stereotypeDefinitions). */
+    public IrModel(
+            String schemaVersion,
+            List<IrPackage> packages,
+            List<IrClassifier> classifiers,
+            List<IrRelation> relations,
+            List<IrTaggedValue> taggedValues
+    ) {
+        this(schemaVersion, null, packages, classifiers, relations, taggedValues);
+    }
+
+
     @Override public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof IrModel)) return false;
         IrModel that = (IrModel) o;
         return Objects.equals(schemaVersion, that.schemaVersion) &&
+                Objects.equals(stereotypeDefinitions, that.stereotypeDefinitions) &&
                 Objects.equals(packages, that.packages) &&
                 Objects.equals(classifiers, that.classifiers) &&
                 Objects.equals(relations, that.relations) &&
@@ -53,6 +71,6 @@ public final class IrModel {
     }
 
     @Override public int hashCode() {
-        return Objects.hash(schemaVersion, packages, classifiers, relations, taggedValues);
+        return Objects.hash(schemaVersion, stereotypeDefinitions, packages, classifiers, relations, taggedValues);
     }
 }

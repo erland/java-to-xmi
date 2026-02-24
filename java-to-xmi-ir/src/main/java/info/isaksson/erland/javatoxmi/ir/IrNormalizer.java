@@ -20,12 +20,13 @@ public final class IrNormalizer {
     public static IrModel normalize(IrModel in) {
         if (in == null) return null;
 
+        List<IrStereotypeDefinition> defs = normalizeStereotypeDefinitions(in.stereotypeDefinitions);
         List<IrPackage> pkgs = normalizePackages(in.packages);
         List<IrClassifier> clzs = normalizeClassifiers(in.classifiers);
         List<IrRelation> rels = normalizeRelations(in.relations);
         List<IrTaggedValue> tags = normalizeTaggedValues(in.taggedValues);
 
-        return new IrModel(in.schemaVersion, pkgs, clzs, rels, tags);
+        return new IrModel(in.schemaVersion, defs, pkgs, clzs, rels, tags);
     }
 
     private static List<IrPackage> normalizePackages(List<IrPackage> in) {
@@ -63,6 +64,7 @@ public final class IrNormalizer {
                     normalizeAttributes(c.attributes),
                     normalizeOperations(c.operations),
                     normalizeStereotypes(c.stereotypes),
+                    normalizeStereotypeRefs(c.stereotypeRefs),
                     normalizeTaggedValues(c.taggedValues),
                     c.source
             ));
@@ -87,6 +89,7 @@ public final class IrNormalizer {
                     a.isFinal,
                     a.type,
                     normalizeStereotypes(a.stereotypes),
+                    normalizeStereotypeRefs(a.stereotypeRefs),
                     normalizeTaggedValues(a.taggedValues),
                     a.source
             ));
@@ -112,6 +115,7 @@ public final class IrNormalizer {
                     o.returnType,
                     normalizeParameters(o.parameters),
                     normalizeStereotypes(o.stereotypes),
+                    normalizeStereotypeRefs(o.stereotypeRefs),
                     normalizeTaggedValues(o.taggedValues),
                     o.source
             ));
@@ -160,6 +164,7 @@ public final class IrNormalizer {
                     r.targetId,
                     r.name,
                     normalizeStereotypes(r.stereotypes),
+                    normalizeStereotypeRefs(r.stereotypeRefs),
                     normalizeTaggedValues(r.taggedValues),
                     r.source
             ));
@@ -173,7 +178,49 @@ public final class IrNormalizer {
         return List.copyOf(out);
     }
 
-    private static List<IrStereotype> normalizeStereotypes(List<IrStereotype> in) {
+    
+    private static List<IrStereotypeDefinition> normalizeStereotypeDefinitions(List<IrStereotypeDefinition> in) {
+        if (in == null) return List.of();
+        List<IrStereotypeDefinition> out = new ArrayList<>(in.size());
+        for (IrStereotypeDefinition d : in) {
+            if (d == null) continue;
+            List<String> appliesTo = d.appliesTo == null ? List.of() : new ArrayList<>(d.appliesTo);
+            appliesTo.sort(String::compareTo);
+
+            List<IrStereotypePropertyDefinition> props = d.properties == null ? List.of() : new ArrayList<>(d.properties);
+            props.sort(Comparator
+                    .comparing((IrStereotypePropertyDefinition p) -> safe(p.name))
+                    .thenComparing(p -> safe(p.type))
+                    .thenComparing(p -> p.isMulti));
+
+            out.add(new IrStereotypeDefinition(
+                    d.id,
+                    d.name,
+                    d.qualifiedName,
+                    d.profileName,
+                    List.copyOf(appliesTo),
+                    List.copyOf(props)
+            ));
+        }
+        out.sort(Comparator
+                .comparing((IrStereotypeDefinition d) -> safe(d.profileName))
+                .thenComparing(d -> safe(d.id))
+                .thenComparing(d -> safe(d.name)));
+        return List.copyOf(out);
+    }
+
+    private static List<IrStereotypeRef> normalizeStereotypeRefs(List<IrStereotypeRef> in) {
+        if (in == null) return List.of();
+        List<IrStereotypeRef> out = new ArrayList<>(in.size());
+        for (IrStereotypeRef r : in) {
+            if (r == null) continue;
+            out.add(new IrStereotypeRef(r.stereotypeId, r.values));
+        }
+        out.sort(Comparator.comparing((IrStereotypeRef r) -> safe(r.stereotypeId)));
+        return List.copyOf(out);
+    }
+
+private static List<IrStereotype> normalizeStereotypes(List<IrStereotype> in) {
         if (in == null) return List.of();
         List<IrStereotype> out = new ArrayList<>(in.size());
         for (IrStereotype s : in) {
