@@ -280,8 +280,8 @@ if (parsed.ir != null && !parsed.ir.isBlank()) {
         NestedTypesMode nestedTypesMode = NestedTypesMode.UML;
 
         // Dependencies (method signatures + conservative call graph).
-        // Defaults to false to keep diagrams clean (associations already capture most structural links).
-        boolean deps = false;
+        // Defaults to true (use --deps false to disable).
+        boolean deps = true;
 
         // Operations (methods/constructors) emission controls.
         // Defaults to false to keep diagrams cleaner.
@@ -417,7 +417,7 @@ if (parsed.ir != null && !parsed.ir.isBlank()) {
                     "  --nested-types <mode>  Control nested member type exposure. Modes:\n" +
                     "                         uml | uml+import | flatten (default: uml)\n" +
                     "  --deps <bool>          Emit dependency relationships (method signatures + conservative call graph).\n" +
-                    "                         Default: false. When enabled, dependencies that duplicate existing\n" +
+                    "                         Default: true. When enabled, dependencies that duplicate existing\n" +
                     "                         associations are suppressed, and multiple findings between the same\n" +
                     "                         two classifiers are merged into a single dependency.\n" +
                     "  --include-accessors <bool>  Include getter/setter operations when a corresponding field exists.\n" +

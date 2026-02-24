@@ -12,7 +12,13 @@ public final class JavaToXmiOptions {
     public String modelName = "model";
 
     public boolean includeStereotypes = true;
-    public boolean includeDependencies = false;
+    /**
+     * Whether to emit dependency relationships (method signatures + conservative call graph).
+     *
+     * <p>Default is true for better architecture browsing. Use the CLI flag
+     * {@code --deps false} (or set this field to {@code false}) to disable.</p>
+     */
+    public boolean includeDependencies = true;
     public AssociationPolicy associationPolicy = AssociationPolicy.RESOLVED;
     public NestedTypesMode nestedTypesMode = NestedTypesMode.UML;
     public boolean includeAccessors = false;
