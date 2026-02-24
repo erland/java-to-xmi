@@ -149,4 +149,34 @@ public final class XmiEmitter {
 
         return new StringResult(xmi, new Result(uml.umlModel, uml.stats));
     }
+
+    private static boolean hasIrStereotypes(IrModel ir) {
+        if (ir == null) return false;
+        try {
+            if (ir.stereotypeDefinitions != null && !ir.stereotypeDefinitions.isEmpty()) return true;
+        } catch (Exception ignored) {}
+        // Check for any refs on classifiers/relations (some IR writers may omit registry but still emit refs)
+        if (ir.classifiers != null) {
+            for (var c : ir.classifiers) {
+                if (c != null && c.stereotypeRefs != null && !c.stereotypeRefs.isEmpty()) return true;
+                if (c != null && c.attributes != null) {
+                    for (var a : c.attributes) {
+                        if (a != null && a.stereotypeRefs != null && !a.stereotypeRefs.isEmpty()) return true;
+                    }
+                }
+                if (c != null && c.operations != null) {
+                    for (var o : c.operations) {
+                        if (o != null && o.stereotypeRefs != null && !o.stereotypeRefs.isEmpty()) return true;
+                    }
+                }
+            }
+        }
+        if (ir.relations != null) {
+            for (var r : ir.relations) {
+                if (r != null && r.stereotypeRefs != null && !r.stereotypeRefs.isEmpty()) return true;
+            }
+        }
+        return false;
+    }
+
 }
