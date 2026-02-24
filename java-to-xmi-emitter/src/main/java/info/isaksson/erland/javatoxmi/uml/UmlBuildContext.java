@@ -37,6 +37,9 @@ final class UmlBuildContext {
     final Map<String, Package> packageByName = new HashMap<>();
     final Map<String, Classifier> classifierByQName = new HashMap<>();
 
+    /** Operations keyed as "<typeQName>#<methodName>(<paramTypes...>)" (matches extractor JRuntimeAnnotation keys). */
+    final Map<String, org.eclipse.uml2.uml.Operation> operationByKey = new HashMap<>();
+
     /** Java model types by qualified name (used for safe association merging heuristics). */
     final Map<String, JType> typeByQName = new HashMap<>();
 

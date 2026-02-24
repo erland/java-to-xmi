@@ -7,6 +7,7 @@ import org.eclipse.uml2.uml.UMLFactory;
 import org.eclipse.uml2.uml.UMLPackage;
 import org.eclipse.uml2.uml.resource.UMLResource;
 import info.isaksson.erland.javatoxmi.model.JModel;
+import info.isaksson.erland.javatoxmi.model.JRuntimeAnnotation;
 import info.isaksson.erland.javatoxmi.model.JType;
 
 import java.util.ArrayList;
@@ -218,6 +219,12 @@ public final class UmlBuilder {
             runtimeRelationEmitter.emit(ctx, jModel.runtimeRelations);
         }
 
+        // 4d) Runtime semantics applied directly to existing elements (REST resources/operations, etc.)
+        if (includeStereotypes && jModel.runtimeAnnotations != null && !jModel.runtimeAnnotations.isEmpty()) {
+            runtimeProfileApplicator.applyRuntimeProfile(ctx);
+            applyRuntimeAnnotations(ctx, jModel.runtimeAnnotations);
+        }
+
         // 4b) Package imports (high-level dependency structure)
         for (JType t : types) {
             Classifier c = ctx.classifierByQName.get(t.qualifiedName);
@@ -237,6 +244,38 @@ public final class UmlBuilder {
         UmlBuilderSupport.ensureAllElementsHaveId(model);
 
         return new Result(model, stats);
+    }
+
+    private static void applyRuntimeAnnotations(UmlBuildContext ctx, List<JRuntimeAnnotation> annos) {
+        if (ctx == null || annos == null || annos.isEmpty()) return;
+
+        List<JRuntimeAnnotation> sorted = new ArrayList<>(annos);
+        sorted.sort(Comparator
+                .comparing((JRuntimeAnnotation a) -> a == null ? "" : (a.targetKey == null ? "" : a.targetKey))
+                .thenComparing(a -> a == null ? "" : (a.stereotype == null ? "" : a.stereotype)));
+
+        for (JRuntimeAnnotation a : sorted) {
+            if (a == null) continue;
+            if (a.targetKey == null || a.targetKey.isBlank()) continue;
+            if (a.stereotype == null || a.stereotype.isBlank()) continue;
+
+            org.eclipse.uml2.uml.Element target = null;
+            // First: classifier by QName
+            var c = ctx.classifierByQName.get(a.targetKey);
+            if (c != null) {
+                target = c;
+            } else {
+                // Second: operation by key
+                var op = ctx.operationByKey.get(a.targetKey);
+                if (op != null) target = op;
+            }
+            if (target == null) continue;
+
+            UmlBuilderSupport.annotateRuntimeStereotype(target, a.stereotype);
+            if (a.tags != null && !a.tags.isEmpty()) {
+                UmlBuilderSupport.annotateTags(target, a.tags);
+            }
+        }
     }
 
     private static int nestingDepth(String qualifiedName) {

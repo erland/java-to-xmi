@@ -56,6 +56,9 @@ public final class JavaExtractor {
         // 3) Extract types (re-walk per compilation unit to keep import context correct for each file)
         TypeExtractionEngine.extractAllTypes(model, units, index, includeDependencies);
 
+        // 4) Extract runtime semantics (REST endpoints etc.)
+        new RestEndpointExtractor().extract(model);
+
         // Stable ordering for downstream determinism
         model.types.sort(Comparator.comparing(t -> t.qualifiedName));
         return model;

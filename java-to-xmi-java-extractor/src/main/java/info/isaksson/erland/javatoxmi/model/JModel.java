@@ -22,6 +22,15 @@ public final class JModel {
      */
     public final List<JRuntimeRelation> runtimeRelations = new ArrayList<>();
 
+    /**
+     * Runtime semantics applied directly to existing UML elements (e.g. REST resources/operations).
+     *
+     * <p>These are emitted as {@code java-to-xmi:runtime} annotations and later post-processed into
+     * stereotype applications during XMI writing. This avoids relying on UML2 stereotype application
+     * at build-time while still preserving semantics.</p>
+     */
+    public final List<JRuntimeAnnotation> runtimeAnnotations = new ArrayList<>();
+
     public JModel(Path sourceRoot, List<Path> sourceFiles) {
         this.sourceRoot = sourceRoot;
         this.sourceFiles = sourceFiles == null ? List.of() : List.copyOf(sourceFiles);

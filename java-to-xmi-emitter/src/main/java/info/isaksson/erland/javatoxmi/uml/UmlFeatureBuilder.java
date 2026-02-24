@@ -110,6 +110,8 @@ final class UmlFeatureBuilder {
             }
             ctx.stats.operationsCreated++;
             UmlBuilderSupport.annotateId(op, "Method:" + t.qualifiedName + "#" + UmlBuilderSupport.signatureKey(m));
+            // Expose operation for runtime annotation resolution (REST operations etc.)
+            ctx.operationByKey.put(t.qualifiedName + "#" + UmlBuilderSupport.signatureKey(m), op);
             UmlBuilderSupport.setVisibility(op, m.visibility);
             op.setIsStatic(m.isStatic);
             if (m.isAbstract) op.setIsAbstract(true);
