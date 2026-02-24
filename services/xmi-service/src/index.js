@@ -32,11 +32,17 @@ app.post(
     const irFile = req.files?.irFile?.[0];
     const irJson = typeof req.body.irJson === "string" ? req.body.irJson : null;
     const language = (req.body.language || "").toLowerCase();
+    const resultFormat = (req.body.resultFormat || "xmi").toLowerCase();
     const repoUrl = req.body.repoUrl;
+
+    if (resultFormat !== "xmi" && resultFormat !== "ir") {
+      return res.status(400).json({ error: "Invalid field: resultFormat (expected 'xmi' or 'ir')" });
+    }
 
     const outDir = path.join(wd.root, "out");
     await fs.promises.mkdir(outDir, { recursive: true });
     const outXmi = path.join(outDir, "model.xmi");
+    const outIr = path.join(outDir, "model.ir.json");
 
     const args = ["-jar", JAR];
 
@@ -68,6 +74,15 @@ app.post(
         await fs.promises.writeFile(irPath, irJson, "utf-8");
       }
 
+      if (resultFormat === "ir") {
+        const irOut = await fs.promises.readFile(irPath, "utf-8");
+        res.status(200);
+        res.setHeader("content-type", "application/json");
+        res.setHeader("content-disposition", 'attachment; filename="model.ir.json"');
+        res.send(irOut);
+        return;
+      }
+
       args.push("--ir", irPath);
       args.push("--output", outXmi);
       await execOrThrow("java", args, { timeoutMs: 5 * 60_000 });
@@ -95,7 +110,18 @@ app.post(
 
     args.push("--source", sourceDir);
     args.push("--output", outXmi);
+    // Also materialize an IR snapshot (schema v2) so callers can request IR as final output.
+    args.push("--write-ir", outIr);
     await execOrThrow("java", args, { timeoutMs: 8 * 60_000 });
+
+    if (resultFormat === "ir") {
+      const ir = await fs.promises.readFile(outIr, "utf-8");
+      res.status(200);
+      res.setHeader("content-type", "application/json");
+      res.setHeader("content-disposition", 'attachment; filename="model.ir.json"');
+      res.send(ir);
+      return;
+    }
 
     const xmi = await fs.promises.readFile(outXmi);
     res.status(200).type("application/xml").send(xmi);
