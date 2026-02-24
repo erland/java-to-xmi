@@ -48,7 +48,9 @@ final class IrToJModelAdapter {
             String qn = nonBlank(c.qualifiedName, c.name, c.id);
             String pkg = resolvePackageName(c, packagesById);
             if (pkg == null || pkg.isBlank()) pkg = packageOf(qn);
-            String simple = simpleNameOf(qn, c.name);
+            String simple = (c.kind == IrClassifierKind.MODULE)
+                    ? nonBlank(c.name, lastPathSegment(qn))
+                    : simpleNameOf(qn, c.name);
 
             MutableType mt = new MutableType();
             mt.packageName = pkg;
@@ -376,6 +378,14 @@ private static JMethod toMethod(IrOperation o) {
         if (s == null) return "";
         // conservative: keep most characters but replace separators that would create misleading nesting
         return s.replace('.', '_').replace(':', '_').replace('/', '_').replace('\\', '_');
+    }
+
+    private static String lastPathSegment(String qn) {
+        if (qn == null) return "";
+        String s = qn;
+        int slash = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
+        if (slash >= 0 && slash < s.length() - 1) return s.substring(slash + 1);
+        return s;
     }
 
     private static String packageOf(String qn) {
