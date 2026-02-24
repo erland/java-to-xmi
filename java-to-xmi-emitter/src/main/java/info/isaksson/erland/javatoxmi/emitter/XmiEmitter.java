@@ -5,6 +5,7 @@ import info.isaksson.erland.javatoxmi.ir.IrNormalizer;
 import info.isaksson.erland.javatoxmi.model.JModel;
 import info.isaksson.erland.javatoxmi.uml.UmlBuilder;
 import info.isaksson.erland.javatoxmi.uml.IrStereotypeProfileBuilder;
+import info.isaksson.erland.javatoxmi.uml.IrStereotypeApplicator;
 import info.isaksson.erland.javatoxmi.xmi.XmiWriter;
 
 import java.io.IOException;
@@ -66,8 +67,14 @@ public final class XmiEmitter {
                 options.includeConstructors
         );
 
+        
         if (options.includeStereotypes && normalized.stereotypeDefinitions != null && !normalized.stereotypeDefinitions.isEmpty()) {
             new IrStereotypeProfileBuilder().apply(uml.umlModel, normalized.stereotypeDefinitions);
+        }
+
+        if (options.includeStereotypes) {
+            // Apply IR-defined stereotype references (if present) using UML2 APIs.
+            new IrStereotypeApplicator().apply(uml.umlModel, normalized);
         }
 
         if (options.includeStereotypes) {

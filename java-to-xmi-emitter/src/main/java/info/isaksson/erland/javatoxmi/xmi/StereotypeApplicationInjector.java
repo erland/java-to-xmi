@@ -186,23 +186,30 @@ final class StereotypeApplicationInjector {
             String stName = ann.getDetails().get(RUNTIME_ANN_KEY);
             if (stName == null || stName.isBlank()) continue;
 
-            StereotypeInfo st = stereotypeByQualifiedName.get("#" + stName.trim());
-            if (st == null) continue; // unknown stereotype, skip
+            // Support multiple runtime stereotypes, comma-separated, deterministically.
+            String[] stNames = stName.split(",");
+            for (String rawName : stNames) {
+                String one = rawName == null ? "" : rawName.trim();
+                if (one.isBlank()) continue;
+
+                StereotypeInfo st = stereotypeByQualifiedName.get("#" + one);
+                if (st == null) continue; // unknown stereotype, skip
 
             String baseRaw = getAnnotatedIdOrDefault(el, null);
-            if (baseRaw == null || baseRaw.isBlank()) continue;
-            String baseId = baseRaw.startsWith("_") ? baseRaw : "_" + baseRaw;
+                if (baseRaw == null || baseRaw.isBlank()) continue;
+                String baseId = baseRaw.startsWith("_") ? baseRaw : "_" + baseRaw;
 
-            InjectedApplication ia = new InjectedApplication();
-            ia.baseId = baseId;
-            ia.baseProperty = basePropertyForElement(el);
-            ia.stereotypeId = st.id;
-            ia.stereotypeName = st.name;
+                InjectedApplication ia = new InjectedApplication();
+                ia.baseId = baseId;
+                ia.baseProperty = basePropertyForElement(el);
+                ia.stereotypeId = st.id;
+                ia.stereotypeName = st.name;
 
-            ia.xmiId = "_" + UmlIdStrategy.id("StereotypeApplication:" + st.name + "@" + baseRaw);
+                ia.xmiId = "_" + UmlIdStrategy.id("StereotypeApplication:" + st.name + "@" + baseRaw);
 
-            // Runtime stereotypes currently carry no typed attributes; tags remain in ToolTags.
-            out.add(ia);
+                // Runtime stereotypes currently carry no typed attributes; tags remain in ToolTags.
+                out.add(ia);
+            }
         }
 
         out.sort((a, b) -> {

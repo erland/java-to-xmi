@@ -274,4 +274,5 @@ public final class IrStereotypeProfileBuilder {
     private static String safe(String s) {
         return s == null ? "" : s;
     }
+
 }
