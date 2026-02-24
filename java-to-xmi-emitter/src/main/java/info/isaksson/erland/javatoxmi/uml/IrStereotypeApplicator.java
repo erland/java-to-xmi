@@ -1,5 +1,7 @@
 package info.isaksson.erland.javatoxmi.uml;
 
+import info.isaksson.erland.javatoxmi.emitter.EmitterWarnings;
+
 import info.isaksson.erland.javatoxmi.ir.IrAttribute;
 import info.isaksson.erland.javatoxmi.ir.IrClassifier;
 import info.isaksson.erland.javatoxmi.ir.IrModel;
@@ -40,7 +42,7 @@ public final class IrStereotypeApplicator {
     /** Detail key used on ID annotations (see UmlBuilderSupport.addAnnotationValue). */
     private static final String ANN_VALUE_KEY = "value";
 
-    public void apply(org.eclipse.uml2.uml.Model umlModel, IrModel ir) {
+    public void apply(org.eclipse.uml2.uml.Model umlModel, IrModel ir, EmitterWarnings warnings) {
         java.util.Map<String, String> stNameById = new java.util.HashMap<>();
         if (ir != null && ir.stereotypeDefinitions != null) {
             for (var def : ir.stereotypeDefinitions) {
@@ -63,15 +65,15 @@ public final class IrStereotypeApplicator {
                     var pe = umlModel.getPackagedElement(c.name);
                     if (pe instanceof Element) cEl = (Element) pe;
                 }
-                applyRefs(cEl, c.stereotypeRefs, stereotypeByIrId, stNameById);
+                applyRefs(cEl, c.stereotypeRefs, stereotypeByIrId, stNameById, warnings);
                 if (c.attributes != null) {
                     for (IrAttribute a : c.attributes) {
-                        applyRefs(elementById.get(a.id), a.stereotypeRefs, stereotypeByIrId, stNameById);
+                        applyRefs(elementById.get(a.id), a.stereotypeRefs, stereotypeByIrId, stNameById, warnings);
                     }
                 }
                 if (c.operations != null) {
                     for (IrOperation o : c.operations) {
-                        applyRefs(elementById.get(o.id), o.stereotypeRefs, stereotypeByIrId, stNameById);
+                        applyRefs(elementById.get(o.id), o.stereotypeRefs, stereotypeByIrId, stNameById, warnings);
                     }
                 }
             }
@@ -80,7 +82,7 @@ public final class IrStereotypeApplicator {
         // Apply relation stereotypes
         if (ir.relations != null) {
             for (IrRelation r : ir.relations) {
-                applyRefs(elementById.get(r.id), r.stereotypeRefs, stereotypeByIrId, stNameById);
+                applyRefs(elementById.get(r.id), r.stereotypeRefs, stereotypeByIrId, stNameById, warnings);
             }
         }
     }
@@ -121,8 +123,13 @@ public final class IrStereotypeApplicator {
         return map;
     }
 
-    private static void applyRefs(Element target, java.util.List<IrStereotypeRef> refs, java.util.Map<String, Stereotype> stereotypeByIrId, java.util.Map<String, String> stNameById) {
-        if (target == null) return;
+    private static void applyRefs(Element target, java.util.List<IrStereotypeRef> refs, java.util.Map<String, Stereotype> stereotypeByIrId, java.util.Map<String, String> stNameById, EmitterWarnings warnings) {
+        if (target == null) {
+            if (warnings != null) {
+                warnings.warn("IR_STEREO_TARGET_NOT_FOUND", "Could not resolve UML element for stereotypeRefs; skipping");
+            }
+            return;
+        }
         if (refs == null || refs.isEmpty()) return;
 
         java.util.List<IrStereotypeRef> ordered = new java.util.ArrayList<>(refs);
@@ -138,6 +145,8 @@ public final class IrStereotypeApplicator {
                 String nm = stNameById == null ? null : stNameById.get(ref.stereotypeId);
                 if (nm != null && !nm.isBlank()) {
                     runtimeNames.add(nm);
+                } else if (warnings != null) {
+                    warnings.warn("IR_STEREO_UNKNOWN_ID", "StereotypeRef references unknown stereotype id; skipping", "stereotypeId", ref.stereotypeId);
                 }
             }
         }

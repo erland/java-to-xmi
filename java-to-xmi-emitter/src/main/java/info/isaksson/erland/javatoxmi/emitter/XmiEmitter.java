@@ -7,6 +7,8 @@ import info.isaksson.erland.javatoxmi.uml.UmlBuilder;
 import info.isaksson.erland.javatoxmi.uml.IrStereotypeProfileBuilder;
 import info.isaksson.erland.javatoxmi.uml.IrStereotypeApplicator;
 import info.isaksson.erland.javatoxmi.xmi.XmiWriter;
+import info.isaksson.erland.javatoxmi.emitter.EmitterWarnings;
+import info.isaksson.erland.javatoxmi.emitter.EmitterWarning;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -22,10 +24,16 @@ public final class XmiEmitter {
     public static final class Result {
         public final org.eclipse.uml2.uml.Model umlModel;
         public final info.isaksson.erland.javatoxmi.uml.UmlBuildStats stats;
+        public final java.util.List<EmitterWarning> warnings;
 
         Result(org.eclipse.uml2.uml.Model umlModel, info.isaksson.erland.javatoxmi.uml.UmlBuildStats stats) {
+            this(umlModel, stats, java.util.List.of());
+        }
+
+        Result(org.eclipse.uml2.uml.Model umlModel, info.isaksson.erland.javatoxmi.uml.UmlBuildStats stats, java.util.List<EmitterWarning> warnings) {
             this.umlModel = umlModel;
             this.stats = stats;
+            this.warnings = warnings == null ? java.util.List.of() : warnings;
         }
     }
 
@@ -54,6 +62,8 @@ public final class XmiEmitter {
 
         IrModel normalized = IrNormalizer.normalize(ir);
 
+        EmitterWarnings warningsCollector = new EmitterWarnings();
+
         JModel jModel = adapter.adapt(normalized, options);
 
         UmlBuilder.Result uml = new UmlBuilder().build(
@@ -68,13 +78,11 @@ public final class XmiEmitter {
         );
 
         
-        if (options.includeStereotypes && normalized.stereotypeDefinitions != null && !normalized.stereotypeDefinitions.isEmpty()) {
-            new IrStereotypeProfileBuilder().apply(uml.umlModel, normalized.stereotypeDefinitions);
-        }
-
-        if (options.includeStereotypes) {
-            // Apply IR-defined stereotype references (if present) using UML2 APIs.
-            new IrStereotypeApplicator().apply(uml.umlModel, normalized);
+        if (options.includeStereotypes && hasIrStereotypes(normalized)) {
+            if (normalized.stereotypeDefinitions != null && !normalized.stereotypeDefinitions.isEmpty()) {
+                new IrStereotypeProfileBuilder().apply(uml.umlModel, normalized.stereotypeDefinitions);
+            }
+            new IrStereotypeApplicator().apply(uml.umlModel, normalized, warningsCollector);
         }
 
         if (options.includeStereotypes) {
@@ -83,7 +91,7 @@ public final class XmiEmitter {
             XmiWriter.write(uml.umlModel, outXmi);
         }
 
-        return new Result(uml.umlModel, uml.stats);
+        return new Result(uml.umlModel, uml.stats, warningsCollector.toDeterministicList());
     }
 
     /**
@@ -97,6 +105,8 @@ public final class XmiEmitter {
         if (options == null) options = EmitterOptions.defaults("model");
 
         IrModel normalized = IrNormalizer.normalize(ir);
+
+        EmitterWarnings warningsCollector = new EmitterWarnings();
         JModel jModel = adapter.adapt(normalized, options);
 
         UmlBuilder.Result uml = new UmlBuilder().build(
@@ -126,6 +136,8 @@ public final class XmiEmitter {
         if (options == null) options = EmitterOptions.defaults("model");
 
         IrModel normalized = IrNormalizer.normalize(ir);
+
+        EmitterWarnings warningsCollector = new EmitterWarnings();
         JModel jModel = adapter.adapt(normalized, options);
 
         UmlBuilder.Result uml = new UmlBuilder().build(

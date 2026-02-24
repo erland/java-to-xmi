@@ -1,5 +1,7 @@
 package info.isaksson.erland.javatoxmi.uml;
 
+import info.isaksson.erland.javatoxmi.emitter.EmitterWarnings;
+
 import info.isaksson.erland.javatoxmi.ir.IrStereotypeDefinition;
 import info.isaksson.erland.javatoxmi.ir.IrStereotypePropertyDefinition;
 
