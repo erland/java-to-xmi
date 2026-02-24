@@ -4,6 +4,7 @@ import info.isaksson.erland.javatoxmi.ir.IrModel;
 import info.isaksson.erland.javatoxmi.ir.IrNormalizer;
 import info.isaksson.erland.javatoxmi.model.JModel;
 import info.isaksson.erland.javatoxmi.uml.UmlBuilder;
+import info.isaksson.erland.javatoxmi.uml.IrStereotypeProfileBuilder;
 import info.isaksson.erland.javatoxmi.xmi.XmiWriter;
 
 import java.io.IOException;
@@ -65,6 +66,10 @@ public final class XmiEmitter {
                 options.includeConstructors
         );
 
+        if (options.includeStereotypes && normalized.stereotypeDefinitions != null && !normalized.stereotypeDefinitions.isEmpty()) {
+            new IrStereotypeProfileBuilder().apply(uml.umlModel, normalized.stereotypeDefinitions);
+        }
+
         if (options.includeStereotypes) {
             XmiWriter.write(uml.umlModel, jModel, outXmi);
         } else {
@@ -98,6 +103,10 @@ public final class XmiEmitter {
                 options.includeConstructors
         );
 
+        if (options.includeStereotypes && normalized.stereotypeDefinitions != null && !normalized.stereotypeDefinitions.isEmpty()) {
+            new IrStereotypeProfileBuilder().apply(uml.umlModel, normalized.stereotypeDefinitions);
+        }
+
         if (options.includeStereotypes) {
             return XmiWriter.writeToString(uml.umlModel, jModel);
         }
@@ -122,6 +131,10 @@ public final class XmiEmitter {
                 options.includeAccessors,
                 options.includeConstructors
         );
+
+        if (options.includeStereotypes && normalized.stereotypeDefinitions != null && !normalized.stereotypeDefinitions.isEmpty()) {
+            new IrStereotypeProfileBuilder().apply(uml.umlModel, normalized.stereotypeDefinitions);
+        }
 
         String xmi = options.includeStereotypes
                 ? XmiWriter.writeToString(uml.umlModel, jModel)
