@@ -65,6 +65,9 @@ public final class JavaExtractor {
         // 6) Extract interceptor/transaction boundaries
         new InterceptorAndTransactionExtractor().extract(model);
 
+        // 7) Extract messaging + scheduled jobs
+        new MessagingAndSchedulingExtractor().extract(model);
+
         // Stable ordering for downstream determinism
         model.types.sort(Comparator.comparing(t -> t.qualifiedName));
         return model;
