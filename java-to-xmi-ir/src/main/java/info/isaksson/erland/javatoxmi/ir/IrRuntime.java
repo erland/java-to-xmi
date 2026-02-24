@@ -85,6 +85,20 @@ public final class IrRuntime {
         public static final String MODULE_REQUIRES = "runtime.module.requires"; // comma-separated
         public static final String MODULE_EXPORTS = "runtime.module.exports";   // comma-separated
         public static final String MODULE_OPENS = "runtime.module.opens";       // comma-separated
+
+        // --- Backwards/shortcut aliases (used by emitter/tests)
+        // Prefer the MODULE_* constants above for new code.
+        public static final String MODULE = MODULE_NAME;
+        public static final String REQUIRES = MODULE_REQUIRES;
+        public static final String EXPORTS = MODULE_EXPORTS;
+        public static final String OPENS = MODULE_OPENS;
+
+        // used for placeholder modules created for external requires
+        public static final String EXTERNAL = "runtime.module.external";
+
+        // optional: finer-grained requires flags (comma-separated module names)
+        public static final String REQUIRES_STATIC = "runtime.module.requiresStatic";
+        public static final String REQUIRES_TRANSITIVE = "runtime.module.requiresTransitive";
     }
 
     /**

@@ -71,6 +71,10 @@ public final class JavaExtractor {
         // 8) Extract Flyway migration artifacts
         new FlywayMigrationExtractor().extract(model, units);
 
+        // 9) Extract JPMS module boundaries (module-info.java)
+        new JpmsModuleExtractor().extract(model, units);
+
+
         // Stable ordering for downstream determinism
         model.types.sort(Comparator.comparing(t -> t.qualifiedName));
         return model;
