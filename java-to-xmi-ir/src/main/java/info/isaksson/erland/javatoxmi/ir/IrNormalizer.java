@@ -144,7 +144,7 @@ public final class IrNormalizer {
                     normalizeTaggedValues(p.taggedValues)
             ));
         }
-        // Keep parameter order by index (as provided) – do not sort.
+        // Keep parameter order by index (as provided) - do not sort.
         return List.copyOf(out);
     }
 
@@ -194,7 +194,12 @@ public final class IrNormalizer {
             out.add(new IrTaggedValue(t.key, t.value));
         }
         out.sort(Comparator
-                .comparingInt((IrTaggedValue t) -> "framework".equals(safe(t.key)) ? 0 : 1)
+                .comparingInt((IrTaggedValue t) -> {
+                    String k = safe(t.key);
+                    if ("framework".equals(k)) return 0;
+                    if (k.startsWith("runtime.")) return 1;
+                    return 2;
+                })
                 .thenComparing(t -> safe(t.key))
                 .thenComparing(t -> safe(t.value)));
         return List.copyOf(out);

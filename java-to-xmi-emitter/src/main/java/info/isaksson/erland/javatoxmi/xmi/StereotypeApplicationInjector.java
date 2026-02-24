@@ -28,6 +28,8 @@ final class StereotypeApplicationInjector {
     private static final String ID_ANN_SOURCE = "java-to-xmi:id";
     private static final String ID_ANN_KEY = "id";
     private static final String TAGS_ANN_SOURCE = "java-to-xmi:tags";
+    private static final String RUNTIME_ANN_SOURCE = "java-to-xmi:runtime";
+    private static final String RUNTIME_ANN_KEY = "stereotype";
 
     private StereotypeApplicationInjector() {}
 
@@ -92,6 +94,11 @@ final class StereotypeApplicationInjector {
         if (toolTags != null) {
             apps.addAll(collectToolTagApplications(umlModel, toolTags));
         }
+
+        // 3) Runtime stereotype applications (any UML Element with java-to-xmi:runtime stereotype marker)
+        apps.addAll(collectRuntimeStereotypeApplications(umlModel, stereotypeByQualifiedName));
+
+        // (apps may now include runtime relations too)
 
         if (apps.isEmpty()) return "";
 
@@ -159,6 +166,65 @@ final class StereotypeApplicationInjector {
         });
 
         return out;
+    }
+    private static List<InjectedApplication> collectRuntimeStereotypeApplications(Model umlModel, Map<String, StereotypeInfo> stereotypeByQualifiedName) {
+        List<InjectedApplication> out = new ArrayList<>();
+        if (umlModel == null || stereotypeByQualifiedName == null || stereotypeByQualifiedName.isEmpty()) return out;
+
+        // Traverse all UML elements deterministically via EMF containment.
+        List<Element> elements = new ArrayList<>();
+        elements.add(umlModel);
+        umlModel.eAllContents().forEachRemaining(eo -> {
+            if (eo instanceof Element el) elements.add(el);
+        });
+
+        for (Element el : elements) {
+            if (el == null) continue;
+            EAnnotation ann = el.getEAnnotation(RUNTIME_ANN_SOURCE);
+            if (ann == null || ann.getDetails() == null) continue;
+
+            String stName = ann.getDetails().get(RUNTIME_ANN_KEY);
+            if (stName == null || stName.isBlank()) continue;
+
+            StereotypeInfo st = stereotypeByQualifiedName.get("#" + stName.trim());
+            if (st == null) continue; // unknown stereotype, skip
+
+            String baseRaw = getAnnotatedIdOrDefault(el, null);
+            if (baseRaw == null || baseRaw.isBlank()) continue;
+            String baseId = baseRaw.startsWith("_") ? baseRaw : "_" + baseRaw;
+
+            InjectedApplication ia = new InjectedApplication();
+            ia.baseId = baseId;
+            ia.baseProperty = basePropertyForElement(el);
+            ia.stereotypeId = st.id;
+            ia.stereotypeName = st.name;
+
+            ia.xmiId = "_" + UmlIdStrategy.id("StereotypeApplication:" + st.name + "@" + baseRaw);
+
+            // Runtime stereotypes currently carry no typed attributes; tags remain in ToolTags.
+            out.add(ia);
+        }
+
+        out.sort((a, b) -> {
+            int c = nullSafe(a.baseId).compareTo(nullSafe(b.baseId));
+            if (c != 0) return c;
+            c = nullSafe(a.stereotypeId).compareTo(nullSafe(b.stereotypeId));
+            if (c != 0) return c;
+            return nullSafe(a.xmiId).compareTo(nullSafe(b.xmiId));
+        });
+
+        return out;
+    }
+
+    private static String basePropertyForElement(Element el) {
+        if (el == null) return "base_NamedElement";
+        if (el instanceof org.eclipse.uml2.uml.Dependency) return "base_Dependency";
+        if (el instanceof org.eclipse.uml2.uml.Operation) return "base_Operation";
+        if (el instanceof org.eclipse.uml2.uml.Class) return "base_Class";
+        if (el instanceof org.eclipse.uml2.uml.Interface) return "base_Interface";
+        if (el instanceof org.eclipse.uml2.uml.Package) return "base_Package";
+        if (el instanceof org.eclipse.uml2.uml.Artifact) return "base_Artifact";
+        return "base_NamedElement";
     }
 
     private static Map<String, StereotypeInfo> indexStereotypesByQualifiedName(Profile profile) {

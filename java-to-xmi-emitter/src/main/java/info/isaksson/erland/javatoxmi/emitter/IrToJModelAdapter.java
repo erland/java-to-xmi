@@ -103,7 +103,14 @@ final class IrToJModelAdapter {
                 case DI:
                 case TEMPLATE_USES:
                 case ROUTE_TO:
-                    if (opts.includeDependencies) {
+                    // Preserve as a runtime relation when it carries runtime semantics (stereotype or runtime.* tags).
+                    // IMPORTANT: when we emit a runtime semantic dependency, do NOT also add it to
+                    // methodBodyTypeDependencies. Otherwise we end up with two UML Dependencies between the same
+                    // client/supplier, and tests/consumers may pick the non-annotated one.
+                    boolean isRuntime = isRuntimeSemanticRelation(r);
+                    if (isRuntime) {
+                        jm.runtimeRelations.add(toRuntimeRelation(r, src.qualifiedName, tgtQn));
+                    } else if (opts.includeDependencies) {
                         if (!src.methodBodyTypeDependencies.contains(tgtQn)) src.methodBodyTypeDependencies.add(tgtQn);
                     }
                     break;
@@ -139,6 +146,47 @@ final class IrToJModelAdapter {
 
         jm.types.sort(Comparator.comparing(t -> t.qualifiedName));
         return jm;
+    }
+
+    private static boolean isRuntimeSemanticRelation(IrRelation r) {
+        if (r == null) return false;
+        if (r.stereotypes != null) {
+            for (IrStereotype st : r.stereotypes) {
+                if (st == null) continue;
+                String n = nonBlank(st.name, st.qualifiedName, "");
+                if (n != null && !n.isBlank()) return true;
+            }
+        }
+        if (r.taggedValues != null) {
+            for (IrTaggedValue tv : r.taggedValues) {
+                if (tv == null || tv.key == null) continue;
+                if (tv.key.startsWith(IrRuntime.TAG_PREFIX)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static JRuntimeRelation toRuntimeRelation(IrRelation r, String srcQn, String tgtQn) {
+        String stName = null;
+        if (r.stereotypes != null) {
+            for (IrStereotype st : r.stereotypes) {
+                if (st == null) continue;
+                String n = nonBlank(st.name, st.qualifiedName, null);
+                if (n != null && !n.isBlank()) { stName = n.trim(); break; }
+            }
+        }
+
+        Map<String, String> tags = new HashMap<>();
+        if (r.taggedValues != null) {
+            for (IrTaggedValue tv : r.taggedValues) {
+                if (tv == null) continue;
+                if (tv.key == null || tv.key.isBlank()) continue;
+                if (tv.value == null) continue;
+                tags.put(tv.key, tv.value);
+            }
+        }
+
+        return new JRuntimeRelation(r.id, srcQn, tgtQn, r.name, stName, tags);
     }
 
     

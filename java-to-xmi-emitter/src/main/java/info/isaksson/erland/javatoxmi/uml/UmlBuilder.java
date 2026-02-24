@@ -26,6 +26,8 @@ import java.util.Set;
 public final class UmlBuilder {
     public static final String ID_ANNOTATION_SOURCE = "java-to-xmi:id";
     public static final String TAGS_ANNOTATION_SOURCE = "java-to-xmi:tags";
+    public static final String RUNTIME_STEREOTYPE_ANNOTATION_SOURCE = "java-to-xmi:runtime";
+    public static final String RUNTIME_STEREOTYPE_ANNOTATION_KEY = "stereotype";
 
     private final MultiplicityResolver multiplicityResolver = new MultiplicityResolver();
 
@@ -120,8 +122,10 @@ public final class UmlBuilder {
         UmlInheritanceBuilder inheritanceBuilder = new UmlInheritanceBuilder();
         UmlAssociationBuilder associationBuilder = new UmlAssociationBuilder();
         UmlDependencyBuilder dependencyBuilder = new UmlDependencyBuilder();
+        UmlRuntimeRelationEmitter runtimeRelationEmitter = new UmlRuntimeRelationEmitter();
         UmlPackageImportBuilder packageImportBuilder = new UmlPackageImportBuilder();
         UmlProfileApplicator profileApplicator = new UmlProfileApplicator();
+        UmlRuntimeProfileApplicator runtimeProfileApplicator = new UmlRuntimeProfileApplicator();
 
         // 1) Packages (deterministic)
         Set<String> pkgNames = new HashSet<>();
@@ -207,6 +211,13 @@ public final class UmlBuilder {
             }
         }
 
+        // 4c) Runtime semantic relations (stereotyped dependencies)
+        if (includeStereotypes && jModel.runtimeRelations != null && !jModel.runtimeRelations.isEmpty()) {
+            // Ensure runtime stereotypes exist in the profile before applying.
+            runtimeProfileApplicator.applyRuntimeProfile(ctx);
+            runtimeRelationEmitter.emit(ctx, jModel.runtimeRelations);
+        }
+
         // 4b) Package imports (high-level dependency structure)
         for (JType t : types) {
             Classifier c = ctx.classifierByQName.get(t.qualifiedName);
@@ -217,6 +228,7 @@ public final class UmlBuilder {
         // Profile + stereotypes
         if (includeStereotypes) {
             // Always build the profile when stereotypes are enabled.
+            runtimeProfileApplicator.applyRuntimeProfile(ctx);
             profileApplicator.applyJavaAnnotationProfile(ctx, types);
         }
 

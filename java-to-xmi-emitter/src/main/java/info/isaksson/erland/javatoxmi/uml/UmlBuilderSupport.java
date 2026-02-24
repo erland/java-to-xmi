@@ -67,6 +67,17 @@ final class UmlBuilderSupport {
         ann.getDetails().put("id", key);
     }
 
+
+    static void annotateRuntimeStereotype(Element element, String stereotypeSimpleName) {
+        if (element == null) return;
+        if (stereotypeSimpleName == null || stereotypeSimpleName.isBlank()) return;
+        EAnnotation ann = element.getEAnnotation(UmlBuilder.RUNTIME_STEREOTYPE_ANNOTATION_SOURCE);
+        if (ann == null) {
+            ann = element.createEAnnotation(UmlBuilder.RUNTIME_STEREOTYPE_ANNOTATION_SOURCE);
+        }
+        ann.getDetails().put(UmlBuilder.RUNTIME_STEREOTYPE_ANNOTATION_KEY, stereotypeSimpleName.trim());
+    }
+
     /**
      * Ensure every UML2 {@link Element} in the model has a deterministic java-to-xmi:id annotation.
      *

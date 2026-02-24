@@ -14,6 +14,14 @@ public final class JModel {
     /** Truly unresolved (cannot be qualified even as an external stub). */
     public final List<UnresolvedTypeRef> unresolvedTypes = new ArrayList<>();
 
+    /**
+     * Non-structural/runtime relations (REST endpoints, CDI events, messaging, migrations, JPMS module edges, etc.).
+     *
+     * <p>These are emitted as stereotyped UML dependencies/artifacts/packages and can be used by consumers
+     * (e.g. an EA modeller) to browse runtime semantics that are not expressible as fields/method signatures alone.</p>
+     */
+    public final List<JRuntimeRelation> runtimeRelations = new ArrayList<>();
+
     public JModel(Path sourceRoot, List<Path> sourceFiles) {
         this.sourceRoot = sourceRoot;
         this.sourceFiles = sourceFiles == null ? List.of() : List.copyOf(sourceFiles);
