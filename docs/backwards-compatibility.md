@@ -19,3 +19,15 @@ To include stereotype applications, call:
 ```java
 XmiWriter.write(umlModel, jModel, out);
 ```
+
+
+## Runtime semantics (REST/CDI/etc.)
+
+Runtime semantics are emitted as:
+- UML base elements (Dependencies/Artifacts/Packages) plus
+- `java-to-xmi:runtime` and `java-to-xmi:tags` annotations on those elements.
+
+Stereotype applications for these semantics are injected **only when stereotypes are enabled**
+(e.g. CLI default, and using `XmiWriter.write(umlModel, jModel, out)`).
+
+Consumers that don’t understand the runtime stereotypes can still read the underlying UML graph.

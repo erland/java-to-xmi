@@ -8,6 +8,27 @@ This IR is designed as a **cross-language interchange format** for:
 The guiding principle is: **keep the core small** and push language/framework specifics into
 `stereotypes[]` and `taggedValues[]`.
 
+## Standardized runtime semantics (recommended)
+
+This IR intentionally keeps the core minimal. For **framework/runtime semantics** (REST, CDI, transactions,
+messaging, scheduling, migrations, JPMS modules), the recommended convention in this repo is:
+
+- Use stereotype names from `IrRuntime.Stereotypes` (e.g. `RestOperation`, `FiresEvent`)
+- Use tagged value keys from `IrRuntime.Tags` (all prefixed with `runtime.`)
+
+These conventions are **optional and additive**: producers that don’t emit them remain compatible.
+
+Common examples:
+- REST endpoint method: add stereotype `RestOperation` and tags:
+  - `runtime.path`, `runtime.httpMethod`, optionally `runtime.consumes`/`runtime.produces`
+- CDI wiring: represent `publisher -> eventType` as a relation with stereotype `FiresEvent`
+- Flyway migrations: represent each migration as an `Artifact`-like classifier or as tagged model metadata
+  (this repo emits them as UML Artifacts during XMI generation)
+
+See `docs/stereotypes.md` for the current list of standardized stereotype names and tag keys.
+
+
+
 ## Root: `IrModel`
 Fields:
 - `schemaVersion` (string, required) – currently `"1.0"`
