@@ -62,6 +62,9 @@ public final class JavaExtractor {
         // 5) Extract CDI runtime semantics (events + observers)
         new CdiEventExtractor().extract(model, units, index);
 
+        // 6) Extract interceptor/transaction boundaries
+        new InterceptorAndTransactionExtractor().extract(model);
+
         // Stable ordering for downstream determinism
         model.types.sort(Comparator.comparing(t -> t.qualifiedName));
         return model;
