@@ -59,6 +59,9 @@ public final class JavaExtractor {
         // 4) Extract runtime semantics (REST endpoints etc.)
         new RestEndpointExtractor().extract(model);
 
+        // 5) Extract CDI runtime semantics (events + observers)
+        new CdiEventExtractor().extract(model, units, index);
+
         // Stable ordering for downstream determinism
         model.types.sort(Comparator.comparing(t -> t.qualifiedName));
         return model;
