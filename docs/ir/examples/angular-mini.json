@@ -34,7 +34,13 @@
         "file": "src/app/app.component.ts",
         "line": 1,
         "col": 1
-      }
+      },
+      "stereotypeRefs": [
+        {
+          "stereotypeId": "st:angular.Component",
+          "values": {}
+        }
+      ]
     },
     {
       "id": "c:UserService",
@@ -61,7 +67,13 @@
         "file": "src/app/user.service.ts",
         "line": 1,
         "col": 1
-      }
+      },
+      "stereotypeRefs": [
+        {
+          "stereotypeId": "st:angular.Injectable",
+          "values": {}
+        }
+      ]
     }
   ],
   "relations": [
@@ -79,6 +91,28 @@
         }
       ],
       "source": null
+    }
+  ],
+  "stereotypeDefinitions": [
+    {
+      "id": "st:angular.Component",
+      "name": "Component",
+      "qualifiedName": null,
+      "profileName": "Frontend",
+      "appliesTo": [
+        "Class"
+      ],
+      "properties": []
+    },
+    {
+      "id": "st:angular.Injectable",
+      "name": "Injectable",
+      "qualifiedName": null,
+      "profileName": "Frontend",
+      "appliesTo": [
+        "Class"
+      ],
+      "properties": []
     }
   ]
 }

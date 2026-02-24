@@ -98,6 +98,10 @@ You should treat warnings as contract violations to fix in the IR producer.
 
 ---
 
+## Schema reference
+
+- The normative schema is `docs/ir/ir-schema-v2.json` (and summary in `docs/ir/ir-schema-v2.md`).
+
 ## 5. Example (minimal)
 
 ```json

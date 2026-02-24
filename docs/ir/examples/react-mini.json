@@ -34,7 +34,13 @@
         "file": "src/App.tsx",
         "line": 1,
         "col": 1
-      }
+      },
+      "stereotypeRefs": [
+        {
+          "stereotypeId": "st:react.ReactComponent",
+          "values": {}
+        }
+      ]
     },
     {
       "id": "c:Header",
@@ -65,7 +71,13 @@
         "file": "src/Header.tsx",
         "line": 1,
         "col": 1
-      }
+      },
+      "stereotypeRefs": [
+        {
+          "stereotypeId": "st:react.ReactComponent",
+          "values": {}
+        }
+      ]
     }
   ],
   "relations": [
@@ -83,6 +95,18 @@
         }
       ],
       "source": null
+    }
+  ],
+  "stereotypeDefinitions": [
+    {
+      "id": "st:react.ReactComponent",
+      "name": "ReactComponent",
+      "qualifiedName": null,
+      "profileName": "Frontend",
+      "appliesTo": [
+        "Class"
+      ],
+      "properties": []
     }
   ]
 }
