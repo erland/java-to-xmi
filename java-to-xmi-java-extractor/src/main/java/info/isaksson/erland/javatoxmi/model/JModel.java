@@ -31,6 +31,9 @@ public final class JModel {
      */
     public final List<JRuntimeAnnotation> runtimeAnnotations = new ArrayList<>();
 
+    /** Flyway-style DB migration artifacts discovered in resources. */
+    public final List<JMigrationArtifact> migrationArtifacts = new ArrayList<>();
+
     public JModel(Path sourceRoot, List<Path> sourceFiles) {
         this.sourceRoot = sourceRoot;
         this.sourceFiles = sourceFiles == null ? List.of() : List.copyOf(sourceFiles);

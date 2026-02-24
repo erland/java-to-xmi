@@ -68,6 +68,9 @@ public final class JavaExtractor {
         // 7) Extract messaging + scheduled jobs
         new MessagingAndSchedulingExtractor().extract(model);
 
+        // 8) Extract Flyway migration artifacts
+        new FlywayMigrationExtractor().extract(model, units);
+
         // Stable ordering for downstream determinism
         model.types.sort(Comparator.comparing(t -> t.qualifiedName));
         return model;

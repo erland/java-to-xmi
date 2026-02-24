@@ -124,6 +124,7 @@ public final class UmlBuilder {
         UmlAssociationBuilder associationBuilder = new UmlAssociationBuilder();
         UmlDependencyBuilder dependencyBuilder = new UmlDependencyBuilder();
         UmlRuntimeRelationEmitter runtimeRelationEmitter = new UmlRuntimeRelationEmitter();
+        UmlMigrationArtifactEmitter migrationArtifactEmitter = new UmlMigrationArtifactEmitter();
         UmlPackageImportBuilder packageImportBuilder = new UmlPackageImportBuilder();
         UmlProfileApplicator profileApplicator = new UmlProfileApplicator();
         UmlRuntimeProfileApplicator runtimeProfileApplicator = new UmlRuntimeProfileApplicator();
@@ -223,6 +224,12 @@ public final class UmlBuilder {
         if (includeStereotypes && jModel.runtimeAnnotations != null && !jModel.runtimeAnnotations.isEmpty()) {
             runtimeProfileApplicator.applyRuntimeProfile(ctx);
             applyRuntimeAnnotations(ctx, jModel.runtimeAnnotations);
+        }
+
+        // 4e) Flyway migration artifacts
+        if (includeStereotypes && jModel.migrationArtifacts != null && !jModel.migrationArtifacts.isEmpty()) {
+            runtimeProfileApplicator.applyRuntimeProfile(ctx);
+            migrationArtifactEmitter.emit(ctx, jModel.migrationArtifacts);
         }
 
         // 4b) Package imports (high-level dependency structure)
