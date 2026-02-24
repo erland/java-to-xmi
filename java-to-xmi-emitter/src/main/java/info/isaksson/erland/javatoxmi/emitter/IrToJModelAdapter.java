@@ -33,6 +33,12 @@ final class IrToJModelAdapter {
             if (c != null && c.id != null) byId.put(c.id, c);
         }
 
+
+        Map<String, IrPackage> packagesById = new HashMap<>();
+        for (IrPackage p : safe(ir.packages)) {
+            if (p != null && p.id != null) packagesById.put(p.id, p);
+        }
+
         // Use a mutable builder to set extends/implements/extra relations before creating immutable JType.
         Map<String, MutableType> types = new LinkedHashMap<>();
 
@@ -40,7 +46,8 @@ final class IrToJModelAdapter {
             if (c == null) continue;
 
             String qn = nonBlank(c.qualifiedName, c.name, c.id);
-            String pkg = packageOf(qn);
+            String pkg = resolvePackageName(c, packagesById);
+            if (pkg == null || pkg.isBlank()) pkg = packageOf(qn);
             String simple = simpleNameOf(qn, c.name);
 
             MutableType mt = new MutableType();
@@ -338,6 +345,37 @@ private static JMethod toMethod(IrOperation o) {
             case PACKAGE:
             default: return JVisibility.PACKAGE_PRIVATE;
         }
+    }
+
+
+    private static String resolvePackageName(IrClassifier c, Map<String, IrPackage> packagesById) {
+        if (c == null || c.packageId == null || c.packageId.isBlank() || packagesById == null) return "";
+        List<String> parts = new ArrayList<>();
+        String cur = c.packageId;
+        int guard = 0;
+        while (cur != null && !cur.isBlank() && guard++ < 1000) {
+            IrPackage p = packagesById.get(cur);
+            if (p == null) break;
+            String name = p.name == null ? "" : p.name.trim();
+            if (!name.isBlank()) {
+                parts.add(name);
+            }
+            cur = p.parentId;
+        }
+        if (parts.isEmpty()) return "";
+        Collections.reverse(parts);
+        // UmlClassifierBuilder creates nested packages by splitting on '.'
+        // so we must avoid '.' inside a segment to prevent accidental extra levels.
+        for (int i = 0; i < parts.size(); i++) {
+            parts.set(i, sanitizePackageSegment(parts.get(i)));
+        }
+        return String.join(".", parts);
+    }
+
+    private static String sanitizePackageSegment(String s) {
+        if (s == null) return "";
+        // conservative: keep most characters but replace separators that would create misleading nesting
+        return s.replace('.', '_').replace(':', '_').replace('/', '_').replace('\\', '_');
     }
 
     private static String packageOf(String qn) {

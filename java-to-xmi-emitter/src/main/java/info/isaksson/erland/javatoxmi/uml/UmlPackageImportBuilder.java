@@ -126,10 +126,25 @@ final class UmlPackageImportBuilder {
         // This avoids creating/depending on packages like java.lang, java.util, jakarta.persistence, etc.
         if (!ctx.typeByQName.containsKey(qn)) return;
 
-        // Derive Java package from qualified name, and map to (nested) UML Package.
-        int lastDot = qn.lastIndexOf('.');
-        if (lastDot <= 0) return;
-        String pkgName = qn.substring(0, lastDot);
+        // Prefer the resolved packageName from the in-model type when available.
+        // This is important for non-Java qualified names (e.g. TS symbols that include ':' or '/'),
+        // where deriving the package from the string would create huge "virtual" packages that end up empty.
+        String pkgName = null;
+        try {
+            info.isaksson.erland.javatoxmi.model.JType t = ctx.typeByQName.get(qn);
+            if (t != null && t.packageName != null && !t.packageName.isBlank()) {
+                pkgName = t.packageName;
+            }
+        } catch (Exception ignored) {
+            // best-effort; fall back below
+        }
+
+        if (pkgName == null || pkgName.isBlank()) {
+            // Fallback: derive Java package from qualified name, and map to (nested) UML Package.
+            int lastDot = qn.lastIndexOf('.');
+            if (lastDot <= 0) return;
+            pkgName = qn.substring(0, lastDot);
+        }
 
         Package p = new UmlClassifierBuilder().getOrCreatePackage(ctx, pkgName);
         if (p != null) pkgsByJavaName.putIfAbsent(pkgName, p);
