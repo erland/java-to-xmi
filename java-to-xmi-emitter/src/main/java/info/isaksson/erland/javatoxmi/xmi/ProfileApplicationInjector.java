@@ -6,9 +6,17 @@ import org.eclipse.uml2.uml.Profile;
 import info.isaksson.erland.javatoxmi.uml.JavaAnnotationProfileBuilder;
 import info.isaksson.erland.javatoxmi.uml.UmlIdStrategy;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
 /**
- * Ensures the serialized XMI has the required namespace declaration and a
- * <profileApplication> referencing the in-model JavaAnnotations profile.
+ * Ensures the serialized XMI has required namespace declarations and <profileApplication>
+ * entries for in-model UML Profiles.
+ *
+ * <p>Historically this injector assumed a single hard-coded profile (JavaAnnotations).
+ * It now supports multiple profiles, including profiles materialized from IR stereotype
+ * definitions (v2 IR format).</p>
  */
 final class ProfileApplicationInjector {
 
@@ -16,6 +24,16 @@ final class ProfileApplicationInjector {
     private static final String ID_ANN_KEY = "id";
 
     private ProfileApplicationInjector() {}
+
+    static List<Profile> findAllProfiles(Model model) {
+        List<Profile> out = new ArrayList<>();
+        if (model == null) return out;
+        for (org.eclipse.uml2.uml.PackageableElement pe : model.getPackagedElements()) {
+            if (pe instanceof Profile p) out.add(p);
+        }
+        out.sort(Comparator.comparing(p -> p == null || p.getName() == null ? "" : p.getName()));
+        return out;
+    }
 
     static Profile findJavaAnnotationsProfile(Model model) {
         if (model == null) return null;
@@ -28,9 +46,16 @@ final class ProfileApplicationInjector {
     }
 
     static String ensureProfileNamespaceDeclared(String xml) {
+        // Backwards-compatible helper: declare JavaAnnotations namespace.
+        return ensureProfileNamespaceDeclared(xml, JavaAnnotationProfileBuilder.PROFILE_NAME, JavaAnnotationProfileBuilder.PROFILE_URI);
+    }
+
+    static String ensureProfileNamespaceDeclared(String xml, String prefix, String uri) {
         if (xml == null) return null;
-        // We use the profile name as prefix, e.g. xmlns:JavaAnnotations="..."
-        String decl = "xmlns:" + JavaAnnotationProfileBuilder.PROFILE_NAME + "=\"" + StereotypeXmiInjector.PROFILE_ECORE_NS + "\"";
+        if (prefix == null || prefix.isBlank()) return xml;
+        if (uri == null || uri.isBlank()) return xml;
+
+        String decl = "xmlns:" + prefix + "=\"" + uri + "\"";
         if (xml.contains(decl)) return xml;
 
         int rootStart = xml.indexOf("<xmi:XMI");
@@ -43,7 +68,6 @@ final class ProfileApplicationInjector {
             }
         }
 
-        // Fallback: add to uml:Model if file doesn't have an xmi:XMI wrapper.
         rootStart = xml.indexOf("<uml:Model");
         if (rootStart >= 0) {
             int gt = xml.indexOf('>', rootStart);
@@ -60,15 +84,20 @@ final class ProfileApplicationInjector {
         if (xml == null) return null;
         if (profile == null) return xml;
 
-        // If a profileApplication already exists, leave as-is.
-        if (xml.contains("<profileApplication") && xml.contains("<appliedProfile")) return xml;
+        String profileName = profile.getName() == null ? "" : profile.getName();
+        if (profileName.isBlank()) return xml;
+
+        // If a profileApplication for THIS profile already exists, leave as-is.
+        String profileId = "_" + getAnnotatedIdOrDefault(profile, UmlIdStrategy.id("Profile:" + profileName));
+        if (xml.contains("href=\"#"+ XmiDomUtil.escapeAttr(profileId) + "\"")) {
+            return xml;
+        }
 
         int modelStart = xml.indexOf("<uml:Model");
         if (modelStart < 0) return xml;
         int modelGt = xml.indexOf('>', modelStart);
         if (modelGt < 0) return xml;
 
-        String profileId = "_" + getAnnotatedIdOrDefault(profile, UmlIdStrategy.id("Profile:" + JavaAnnotationProfileBuilder.PROFILE_NAME));
         String appId = "_" + UmlIdStrategy.id("ProfileApplication:" + profileId);
         String pa = "\n  <profileApplication xmi:id=\"" + XmiDomUtil.escapeAttr(appId) + "\">\n" +
                 "    <appliedProfile href=\"#" + XmiDomUtil.escapeAttr(profileId) + "\"/>\n" +

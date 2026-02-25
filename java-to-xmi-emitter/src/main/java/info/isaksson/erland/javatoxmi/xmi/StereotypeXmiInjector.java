@@ -5,41 +5,57 @@ import org.eclipse.uml2.uml.Profile;
 import info.isaksson.erland.javatoxmi.model.JModel;
 import info.isaksson.erland.javatoxmi.uml.JavaAnnotationProfileBuilder;
 
+import java.util.List;
+
 /**
  * Step 5 (recommended approach) — Apply stereotypes by injecting deterministic, UML2-style
  * stereotype applications into the serialized XMI.
  *
- * Why this exists:
- * Eclipse UML2's runtime APIs for Profile#define / applyProfile / applyStereotype are brittle
- * across versions and require strict metamodel identity. Instead of depending on those APIs,
- * we post-process the saved XMI and inject:
- *   1) a <profileApplication> under the root uml:Model
- *   2) stereotype application instances as <JavaAnnotations:Stereo ... base_Class="..."/>
- *
- * This is closer to what many UML tools expect than custom xmi:Extension payloads, while
- * remaining deterministic and independent of UML2 runtime behavior.
+ * <p>Originally this injector was hard-coded to a single profile (JavaAnnotations). It now supports
+ * injecting applications for multiple profiles, including profiles materialized from IR
+ * stereotypeDefinitions (v2 IR format).</p>
  */
 final class StereotypeXmiInjector {
-
-    /** Namespace URI for the generated EPackage that represents the profile in XMI. */
-    static final String PROFILE_ECORE_NS = JavaAnnotationProfileBuilder.PROFILE_URI;
 
     private StereotypeXmiInjector() {}
 
     static String inject(Model umlModel, JModel jModel, String xmiWrappedXml) {
         if (umlModel == null || jModel == null) return xmiWrappedXml;
 
-        Profile profile = ProfileApplicationInjector.findJavaAnnotationsProfile(umlModel);
-        if (profile == null) return xmiWrappedXml;
+        List<Profile> profiles = ProfileApplicationInjector.findAllProfiles(umlModel);
+        if (profiles.isEmpty()) return xmiWrappedXml;
 
-        String appsXml = StereotypeApplicationInjector.buildApplicationsXml(umlModel, jModel, profile);
+        String appsXml = StereotypeApplicationInjector.buildApplicationsXml(umlModel, jModel, profiles);
         if (appsXml == null || appsXml.isBlank()) return xmiWrappedXml;
 
-        // Ensure the profile Ecore namespace is declared for stereotype application element names.
+        // Ensure each profile prefix namespace is declared and each profile has a profileApplication.
+        for (Profile p : profiles) {
+            if (p == null) continue;
+            String prefix = p.getName();
+            if (prefix == null || prefix.isBlank()) continue;
 
-        xmiWrappedXml = ProfileApplicationInjector.ensureProfileNamespaceDeclared(xmiWrappedXml);
-        xmiWrappedXml = ProfileApplicationInjector.ensureProfileApplicationPresent(xmiWrappedXml, profile);
+            String uri = profileUri(p);
+            if (uri == null || uri.isBlank()) continue;
+
+            xmiWrappedXml = ProfileApplicationInjector.ensureProfileNamespaceDeclared(xmiWrappedXml, prefix, uri);
+            xmiWrappedXml = ProfileApplicationInjector.ensureProfileApplicationPresent(xmiWrappedXml, p);
+        }
 
         return XmiDomUtil.injectBeforeClosingXmi(xmiWrappedXml, appsXml);
+    }
+
+    private static String profileUri(Profile p) {
+        if (p == null) return null;
+
+        String name = p.getName() == null ? "" : p.getName().trim();
+        if (!name.isBlank() && JavaAnnotationProfileBuilder.PROFILE_NAME.equals(name)) {
+            return JavaAnnotationProfileBuilder.PROFILE_URI;
+        }
+
+        // Eclipse UML2 Profile does not expose a stable "URI" property across versions.
+        // For IR-created profiles, use a deterministic fallback namespace based on profile name.
+        String safe = name.replaceAll("[^A-Za-z0-9_.-]+", "_");
+        if (safe.isBlank()) safe = "IRProfile";
+        return "http://java-to-xmi/schemas/ir/" + safe + "/1.0";
     }
 }
